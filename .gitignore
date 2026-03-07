@@ -205,3 +205,31 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ── AI / ML ──────────────────────────────────
+*.pt          # PyTorch 모델 가중치 (용량 큼)
+*.onnx        # ONNX 변환 모델
+*.pth
+runs/         # YOLOv8 학습 결과 폴더
+datasets/     # 학습 데이터셋 (Roboflow 등)
+*.pkl
+
+# ── 환경변수 (절대 올리면 안 됨!) ──────────────
+.env
+.env.*
+!.env.example  # 예시 파일은 허용
+
+# ── Docker ───────────────────────────────────
+docker-compose.override.yml
+
+# ── React Native ─────────────────────────────
+node_modules/
+.expo/
+android/
+ios/
+*.keystore      # 앱 서명 키 (절대 올리면 안 됨)
+
+# ── 데이터 / 출력물 ───────────────────────────
+*.pdf           # 생성된 리포트
+uploads/        # 업로드된 이미지
+chroma_db/      # 벡터 DB 로컬 저장소

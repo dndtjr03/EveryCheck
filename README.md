@@ -22,11 +22,11 @@
 
 | 이름 | 역할 | GitHub |
 |------|------|--------|
-| 이웅석 | 팀장 / 백엔드 · Docker 인프라 | - |
-| 김수호 | AI 모델 개발 (YOLOv8, LLM, RAG) | - |
-| 심우재 | 모바일 앱 프론트엔드 (React Native) | - |
-| 조효민 | AI 모델 개발 보조 / Change Detection | - |
-| 본인이름 | 데이터 수집 · 법리 분석 · 판례 벡터 DB | - |
+| 이웅석 | 팀장 / 데이터 수집 · 법리 분석 · 판례 벡터 DB | - |
+| 조효민 | 백엔드 · Docker 인프라 | - |
+| 심우재 | AI 모델 개발 (YOLOv8, LLM, RAG) | - |
+| 김수호 | 모바일 앱 프론트엔드 (React Native) | - |
+
 
 ---
 
@@ -36,7 +36,7 @@
 |------|------|
 | AI | Python 3.10, YOLOv8, PyTorch, LangChain, ChromaDB |
 | 백엔드 | FastAPI, PostgreSQL, Docker, Nginx |
-| 모바일 | React Native, Expo |
+| 프론트엔드 | React Native, Expo |
 | 데이터 | pdfplumber, sentence-transformers, Roboflow |
 
 ---

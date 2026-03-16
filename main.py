@@ -17,12 +17,18 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     status,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 import models
@@ -32,8 +38,9 @@ from models import DamageTypeEnum, DamageImage, RealEstate, RepairEstimate, User
 from utils import (
     calculate_depreciation_rate,
     calculate_tenant_cost,
-    calculate_file_sha256,
+    calculate_sha256_from_bytes,
     upload_image_to_s3,
+    validate_and_read_image_file,
 )
 
 
@@ -47,14 +54,37 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# CORS 설정 (프론트 연동을 위해 허용 Origin을 환경 변수로 제어)
+# 예: CORS_ALLOW_ORIGINS=http://localhost:3000,https://dev.example.com
+cors_allow_origins = os.getenv("CORS_ALLOW_ORIGINS", "*")
+allow_origins = [o.strip() for o in cors_allow_origins.split(",")] if cors_allow_origins else ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Rate Limiting 설정: 모든 API 분당 10회
+limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+# slowapi 예외 핸들러는 FastAPI 스타일로 등록한다.
+from slowapi import _rate_limit_exceeded_handler  # noqa: E402
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # DB 테이블 생성 (간단한 예제에서는 앱 시작 시 자동 생성)
 Base.metadata.create_all(bind=engine)
 
 
 # JWT 관련 설정 (환경 변수에서 가져오되 기본값 제공)
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET") or "change-me-in-production"
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "14"))
 
 # 비밀번호 해싱 설정 (bcrypt)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -88,6 +118,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """JWT 리프레시 토큰을 생성한다.
+
+    - 운영 환경에서는 토큰 재사용 탐지/폐기(블랙리스트) 등을 위해 DB/Redis 저장소 연동을 권장한다.
+    """
+
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
+    to_encode.update({"exp": expire, "type": "refresh"})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
@@ -147,8 +189,18 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
 # -----------------------------
 
 
-@app.post("/auth/register", response_model=schemas.UserRead, summary="회원 가입")
-def register_user(user_in: schemas.UserCreate, db: Session = Depends(get_db)) -> User:
+@app.post(
+    "/auth/register",
+    response_model=schemas.UserRead,
+    summary="회원 가입",
+    description="신규 사용자를 등록합니다. 이메일 중복을 검사하고 비밀번호는 bcrypt로 해시하여 저장합니다.",
+)
+@limiter.limit("10/minute")
+def register_user(
+    request: Request,
+    user_in: schemas.UserCreate,
+    db: Session = Depends(get_db),
+) -> User:
     """간단한 회원 가입 엔드포인트.
 
     - 이메일 중복 여부를 체크한다.
@@ -171,8 +223,15 @@ def register_user(user_in: schemas.UserCreate, db: Session = Depends(get_db)) ->
     return user
 
 
-@app.post("/auth/token", response_model=schemas.Token, summary="액세스 토큰 발급")
+@app.post(
+    "/auth/token",
+    response_model=schemas.Token,
+    summary="액세스 토큰 발급",
+    description="이메일/비밀번호로 로그인하여 JWT 액세스 토큰을 발급합니다. (OAuth2 Password Grant)",
+)
+@limiter.limit("10/minute")
 def login_for_access_token(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ) -> schemas.Token:
@@ -186,12 +245,56 @@ def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": user.email})
-    return schemas.Token(access_token=access_token, token_type="bearer")
+    access_token = create_access_token(data={"sub": user.email, "type": "access"})
+    refresh_token = create_refresh_token(data={"sub": user.email})
+    return schemas.Token(access_token=access_token, refresh_token=refresh_token, token_type="bearer")
 
 
-@app.get("/users/me", response_model=schemas.UserRead, summary="내 정보 조회")
-async def read_users_me(current_user: User = Depends(get_current_active_user)) -> User:
+@app.post(
+    "/auth/refresh",
+    response_model=schemas.Token,
+    summary="리프레시 토큰으로 재발급",
+    description="리프레시 토큰을 검증한 뒤 새로운 액세스 토큰(및 리프레시 토큰)을 발급합니다. 운영 환경에서는 토큰 회전/폐기 전략을 추가하세요.",
+)
+@limiter.limit("10/minute")
+def refresh_access_token(
+    request: Request,
+    refresh_token: str = Body(..., embed=True, description="리프레시 토큰 문자열"),
+    db: Session = Depends(get_db),
+) -> schemas.Token:
+    """리프레시 토큰을 이용해 액세스 토큰을 재발급한다."""
+
+    try:
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="리프레시 토큰이 아닙니다.")
+        sub: str = payload.get("sub")
+        if not sub:
+            raise HTTPException(status_code=401, detail="리프레시 토큰이 올바르지 않습니다.")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="리프레시 토큰 검증에 실패했습니다.")
+
+    # 사용자 존재 여부 확인 (계정이 삭제/비활성화된 경우 토큰 재발급 차단 목적)
+    user = get_user_by_email(db, email=sub)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="사용자를 찾을 수 없거나 비활성화되었습니다.")
+
+    new_access = create_access_token(data={"sub": user.email, "type": "access"})
+    new_refresh = create_refresh_token(data={"sub": user.email})
+    return schemas.Token(access_token=new_access, refresh_token=new_refresh, token_type="bearer")
+
+
+@app.get(
+    "/users/me",
+    response_model=schemas.UserRead,
+    summary="내 정보 조회",
+    description="현재 인증된 사용자 정보를 반환합니다. Authorization 헤더에 Bearer 토큰이 필요합니다.",
+)
+@limiter.limit("10/minute")
+async def read_users_me(
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+) -> User:
     """현재 인증된 사용자의 정보를 반환한다."""
 
     return current_user
@@ -206,8 +309,11 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)) -
     "/real-estates",
     response_model=schemas.RealEstateRead,
     summary="임대차 계약 등록",
+    description="현재 로그인한 사용자의 임대차 계약(주소, 입주/퇴거일, 메모)을 등록합니다.",
 )
+@limiter.limit("10/minute")
 def create_real_estate(
+    request: Request,
     real_estate_in: schemas.RealEstateCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -231,8 +337,11 @@ def create_real_estate(
     "/real-estates",
     response_model=List[schemas.RealEstateRead],
     summary="내 임대차 계약 목록",
+    description="현재 로그인한 사용자가 등록한 임대차 계약 목록을 최신순으로 조회합니다.",
 )
+@limiter.limit("10/minute")
 def list_real_estates(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> List[RealEstate]:
@@ -250,8 +359,11 @@ def list_real_estates(
     "/real-estates/{real_estate_id}",
     response_model=schemas.RealEstateDetail,
     summary="임대차 계약 상세 (이미지/견적 포함)",
+    description="임대차 계약 1건의 상세 정보와, 연관된 손상 이미지/수리비 산출 결과 목록을 함께 반환합니다.",
 )
+@limiter.limit("10/minute")
 def get_real_estate_detail(
+    request: Request,
     real_estate_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -292,8 +404,11 @@ def get_real_estate_detail(
     "/real-estates/{real_estate_id}/images",
     response_model=schemas.DamageImageRead,
     summary="손상 이미지 업로드",
+    description="손상 이미지를 업로드합니다. 10MB 제한 및 확장자/실제 MIME 검증을 수행하고, SHA-256 해시를 저장한 뒤 S3에 업로드합니다.",
 )
+@limiter.limit("10/minute")
 async def upload_damage_image(
+    request: Request,
     real_estate_id: int,
     file: UploadFile = File(..., description="손상 이미지 파일"),
     damage_type: DamageTypeEnum = Form(..., description="손상 종류 (wallpaper/floor/other)"),
@@ -318,13 +433,24 @@ async def upload_damage_image(
     if not real_estate:
         raise HTTPException(status_code=404, detail="임대차 계약을 찾을 수 없습니다.")
 
-    # 1) 파일 SHA-256 해시값 계산 (무결성 검증용)
-    file_hash = await calculate_file_sha256(file)
+    # 1) 업로드 파일 보안 검증(확장자/MIME/용량) 및 바이트 읽기
+    try:
+        file_bytes, detected_mime = await validate_and_read_image_file(file)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # 2) S3 업로드
+    # 2) 파일 SHA-256 해시값 계산 (무결성 검증용)
+    file_hash = await calculate_sha256_from_bytes(file_bytes)
+
+    # 3) S3 업로드
     bucket_name = os.getenv("S3_BUCKET_NAME", "")
     try:
-        s3_url = await upload_image_to_s3(file, bucket_name=bucket_name)
+        s3_url = await upload_image_to_s3(
+            file,
+            bucket_name=bucket_name,
+            body=file_bytes,
+            content_type=detected_mime,
+        )
     except ValueError as e:
         # 설정 오류 등으로 인한 예외는 서버 오류로 응답
         raise HTTPException(status_code=500, detail=str(e))
@@ -354,8 +480,11 @@ async def upload_damage_image(
     "/real-estates/{real_estate_id}/repair-estimates",
     response_model=schemas.RepairEstimateRead,
     summary="수리비 및 감가상각 계산/저장",
+    description="총 수리비, 경과연수, 내용연수(기본 10년)를 받아 국토부 가이드라인 공식으로 임차인 부담비용과 감가상각 비율을 계산해 저장합니다.",
 )
+@limiter.limit("10/minute")
 def create_repair_estimate(
+    request: Request,
     real_estate_id: int,
     estimate_in: schemas.RepairEstimateCreate,
     damage_image_id: Optional[int] = Body(
@@ -423,8 +552,10 @@ def create_repair_estimate(
 @app.get(
     "/health",
     summary="헬스체크",
+    description="서비스가 정상 동작하는지 확인하는 간단한 헬스체크 엔드포인트입니다.",
 )
-def health_check() -> dict:
+@limiter.limit("10/minute")
+def health_check(request: Request) -> dict:
     """간단한 헬스체크 엔드포인트."""
 
     return {"status": "ok"}

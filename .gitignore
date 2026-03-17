@@ -233,3 +233,8 @@ ios/
 *.pdf           # 생성된 리포트
 uploads/        # 업로드된 이미지
 chroma_db/      # 벡터 DB 로컬 저장소
+.env
+__pycache__/
+*.pyc
+.cursor/
+.venv/

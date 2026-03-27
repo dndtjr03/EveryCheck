@@ -1,7 +1,7 @@
 """FastAPI 요청/응답에 사용되는 Pydantic 스키마 정의."""
 
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
@@ -133,9 +133,24 @@ class RepairEstimateRead(RepairEstimateBase):
     id: int
     real_estate_id: int
     damage_image_id: Optional[int] = None
+    part: Optional[str] = None
+    damage_type: Optional[str] = None
+    estimated_cost: Optional[float] = None
+    ai_confidence: Optional[float] = None
+    image_hash: Optional[str] = None
+    analysis_status: Optional[str] = None
+    celery_task_id: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AnalyzeJobResponse(BaseModel):
+    """비동기 AI 분석 요청 접수 응답."""
+
+    status: Literal["analyzing"] = "analyzing"
+    task_id: str
+    repair_estimate_id: int
 
 
 # -----------------------------

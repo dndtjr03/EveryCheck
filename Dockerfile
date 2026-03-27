@@ -3,6 +3,7 @@ FROM python:3.11-slim
 # 시스템 패키지 업데이트 및 필수 라이브러리 설치 (psycopg2 등 빌드용)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    curl \
     libpq-dev \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*

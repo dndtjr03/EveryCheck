@@ -10,6 +10,7 @@ import os
 import uuid
 from datetime import date
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 import boto3
 import magic
@@ -22,6 +23,29 @@ _s3_client = boto3.client("s3", region_name=os.getenv("AWS_REGION", "ap-northeas
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB 제한
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+# 확장자 ↔ 허용 MIME (확장자 위조·이중 확장자 방지용 교차 검증)
+_EXTENSION_TO_EXPECTED_MIME = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+# 벽지·장판 등 소모성 마감재 기본 내용연수(년) — 국토부 가이드라인 예시값, 호출부에서 덮어쓸 수 있음
+DEFAULT_USEFUL_LIFE_YEARS = 10.0
+
+# magic 검사 시 사용할 최대 샘플 크기 (바이트). JPEG/PNG/WebP 식별에 충분하면서 polyglot 일부 회피
+_MAGIC_SAMPLE_BYTES = 256 * 1024
+
+
+def compute_image_hash_sha256(data: bytes) -> str:
+    """업로드 이미지 바이트에 대한 SHA-256 지문(64자 16진 image_hash)을 반환한다.
+
+    DB의 DamageImage.file_hash, RepairEstimate.image_hash 등 무결성 필드에 그대로 저장한다.
+    """
+
+    return hashlib.sha256(data).hexdigest()
 
 
 async def calculate_file_sha256(upload_file: UploadFile) -> str:
@@ -46,6 +70,37 @@ async def calculate_file_sha256(upload_file: UploadFile) -> str:
     return sha256.hexdigest()
 
 
+def _strict_detect_and_match_image_mime(file_bytes: bytes, filename: Optional[str]) -> str:
+    """python-magic으로 실제 MIME을 검출하고, 확장자·허용 목록과 교차 검증한다."""
+
+    ext = _get_extension(filename)
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise ValueError("허용되지 않은 파일 확장자입니다. (.jpg, .jpeg, .png, .webp 만 허용)")
+
+    expected = _EXTENSION_TO_EXPECTED_MIME.get(ext)
+    if expected is None:
+        raise ValueError("허용되지 않은 파일 확장자입니다.")
+
+    if not file_bytes:
+        raise ValueError("빈 파일은 업로드할 수 없습니다.")
+
+    sample = file_bytes if len(file_bytes) <= _MAGIC_SAMPLE_BYTES else file_bytes[:_MAGIC_SAMPLE_BYTES]
+    detected_mime = magic.from_buffer(sample, mime=True)
+
+    if detected_mime not in ALLOWED_IMAGE_MIME_TYPES:
+        raise ValueError(
+            "실제 파일 내용이 허용된 이미지 형식이 아닙니다. (python-magic 검증 실패)"
+        )
+
+    if detected_mime != expected:
+        raise ValueError(
+            "파일 확장자와 실제 이미지 형식이 일치하지 않습니다. "
+            f"(확장자 기대: {expected}, 실제: {detected_mime})"
+        )
+
+    return detected_mime
+
+
 def _get_extension(filename: Optional[str]) -> str:
     """파일명에서 확장자를 추출한다."""
 
@@ -60,8 +115,9 @@ async def validate_and_read_image_file(upload_file: UploadFile) -> Tuple[bytes, 
 
     요구사항:
     - 파일 용량 10MB 제한
-    - .jpg, .jpeg, .png, .webp 확장자 검증
-    - python-magic을 사용하여 실제 MIME 타입 검증
+    - 확장자 화이트리스트
+    - python-magic으로 실제 바이트 기반 MIME 검증 + 확장자와의 일치(위조 방지)
+    - 클라이언트 Content-Type이 있으면 검출 MIME과 일치 여부 확인
 
     반환:
     - (file_bytes, detected_mime_type)
@@ -86,25 +142,26 @@ async def validate_and_read_image_file(upload_file: UploadFile) -> Tuple[bytes, 
     # 이후 로직에서 재사용 가능하도록 파일 포인터를 되돌린다.
     await upload_file.seek(0)
 
-    if not buf:
-        raise ValueError("빈 파일은 업로드할 수 없습니다.")
+    raw = bytes(buf)
+    detected_mime = _strict_detect_and_match_image_mime(raw, upload_file.filename)
 
-    # python-magic으로 실제 MIME 타입을 추출해 검증한다.
-    detected_mime = magic.from_buffer(bytes(buf[:2048]), mime=True)
-    if detected_mime not in ALLOWED_IMAGE_MIME_TYPES:
-        raise ValueError("허용되지 않은 MIME 타입입니다. (image/jpeg, image/png, image/webp 만 허용)")
+    if upload_file.content_type:
+        ct = upload_file.content_type.split(";")[0].strip().lower()
+        if ct not in ALLOWED_IMAGE_MIME_TYPES:
+            raise ValueError("요청의 Content-Type이 허용된 이미지가 아닙니다.")
+        if ct != detected_mime:
+            raise ValueError(
+                "요청 Content-Type과 실제 파일 내용이 일치하지 않습니다. "
+                f"(헤더: {ct}, 실제: {detected_mime})"
+            )
 
-    # 클라이언트가 보낸 Content-Type도 함께 확인해 불일치/위조 가능성을 낮춘다.
-    if upload_file.content_type and upload_file.content_type not in ALLOWED_IMAGE_MIME_TYPES:
-        raise ValueError("요청의 Content-Type이 허용되지 않습니다.")
-
-    return bytes(buf), detected_mime
+    return raw, detected_mime
 
 
 async def calculate_sha256_from_bytes(data: bytes) -> str:
-    """바이트 데이터의 SHA-256 해시를 계산한다."""
+    """바이트 데이터의 SHA-256 해시를 계산한다 (비동기 API 호환용 래퍼)."""
 
-    return hashlib.sha256(data).hexdigest()
+    return compute_image_hash_sha256(data)
 
 
 async def upload_image_to_s3(
@@ -149,6 +206,30 @@ async def upload_image_to_s3(
     return url
 
 
+def parse_s3_public_bucket_key(url: str) -> Tuple[str, str]:
+    """퍼블릭 가상 호스팅 형태의 S3 URL에서 버킷명과 오브젝트 키를 추출한다."""
+
+    parsed = urlparse(url)
+    host = parsed.netloc
+    if ".s3." not in host or not host.endswith(".amazonaws.com"):
+        raise ValueError("지원하지 않는 S3 URL 형식입니다.")
+    bucket = host.split(".s3.", 1)[0]
+    key = parsed.path.lstrip("/")
+    if not key:
+        raise ValueError("S3 URL에 오브젝트 키가 없습니다.")
+    return bucket, key
+
+
+def download_bytes_from_s3_url(url: str) -> Tuple[bytes, str]:
+    """S3 퍼블릭 URL에서 객체 바이트와 Content-Type을 가져온다 (Celery 워커 분석용)."""
+
+    bucket, key = parse_s3_public_bucket_key(url)
+    resp = _s3_client.get_object(Bucket=bucket, Key=key)
+    body = resp["Body"].read()
+    content_type = resp.get("ContentType") or "application/octet-stream"
+    return body, content_type
+
+
 def calculate_elapsed_years(start_date: date, end_date: Optional[date] = None) -> float:
     """입주일(start_date)과 기준일(end_date) 사이의 경과 연수를 계산한다.
 
@@ -164,47 +245,55 @@ def calculate_elapsed_years(start_date: date, end_date: Optional[date] = None) -
     return max(days / 365.0, 0.0)
 
 
+def compute_depreciation_factor(elapsed_years: float, useful_life_years: float) -> float:
+    """감가 후 임차인 부담 비율: (1 - elapsed/useful), 0~1로 클램핑."""
+
+    if useful_life_years <= 0:
+        raise ValueError("내용연수(Years_useful)는 0보다 커야 합니다.")
+
+    factor = 1.0 - (elapsed_years / useful_life_years)
+    return max(min(factor, 1.0), 0.0)
+
+
+def compute_moliti_depreciation_tenant_cost(
+    cost_total: float,
+    years_elapsed: float,
+    years_useful: float = DEFAULT_USEFUL_LIFE_YEARS,
+) -> float:
+    """국토부 가이드라인에 따른 임차인 부담 수리비(감가상각 적용).
+
+    수식:
+        Cost_tenant = Cost_total × (1 - Years_elapsed / Years_useful)
+
+    - 벽지·장판 등 소모성 마감재의 내용연수(Years_useful) 기본값은 10년이며,
+      마감재 종류·계약에 맞게 호출부에서 다른 값을 넘길 수 있다.
+    - 경과 연수가 내용연수를 초과하면 임차인 부담은 0으로 본다(비율 하한 0).
+    """
+
+    if cost_total < 0:
+        raise ValueError("총 수리비(Cost_total)는 0 이상이어야 합니다.")
+
+    factor = compute_depreciation_factor(years_elapsed, years_useful)
+    return cost_total * factor
+
+
 def calculate_tenant_cost(
     total_repair_cost: float,
     elapsed_years: float,
-    useful_life_years: float = 10.0,
+    useful_life_years: float = DEFAULT_USEFUL_LIFE_YEARS,
 ) -> float:
-    """국토부 가이드라인(벽지/장판 내구연수 10년 기준)에 따른 임차인 부담 비용을 계산한다.
+    """`compute_moliti_depreciation_tenant_cost`와 동일 (기존 코드 호환용 이름)."""
 
-    공식:
-        임차인 부담비용 = 총 수리비 * (1 - 경과연수 / 내용연수)
-
-    - useful_life_years 기본값을 10년으로 두어 벽지/장판을 기본 케이스로 가정한다.
-    - (1 - 경과연수/내용연수)의 결과는 0~1 범위로 클램핑하여 과도한 값이 나오지 않도록 한다.
-    """
-
-    if total_repair_cost < 0:
-        raise ValueError("총 수리비는 0 이상이어야 합니다.")
-
-    if useful_life_years <= 0:
-        raise ValueError("내용연수는 0보다 커야 합니다.")
-
-    ratio = 1.0 - (elapsed_years / useful_life_years)
-
-    # 0 ~ 1 범위로 제한 (경과 연수가 내용연수보다 크면 임차인 부담 0으로 간주)
-    ratio = max(min(ratio, 1.0), 0.0)
-
-    return total_repair_cost * ratio
+    return compute_moliti_depreciation_tenant_cost(
+        total_repair_cost, elapsed_years, useful_life_years
+    )
 
 
 def calculate_depreciation_rate(
     elapsed_years: float,
-    useful_life_years: float = 10.0,
+    useful_life_years: float = DEFAULT_USEFUL_LIFE_YEARS,
 ) -> float:
-    """경과 연수 기준 감가상각 비율(임차인 부담 비율)을 계산한다.
+    """경과 연수 기준 임차인 부담 비율(감가상각 후 임차인이 부담하는 비중, 0~1)."""
 
-    - 예: 반환값이 0.3이면 총 수리비의 30%를 임차인이 부담한다는 의미이다.
-    - calculate_tenant_cost와 동일한 공식 기반으로, 0~1 범위 내 값으로 클램핑한다.
-    """
-
-    if useful_life_years <= 0:
-        raise ValueError("내용연수는 0보다 커야 합니다.")
-
-    ratio = 1.0 - (elapsed_years / useful_life_years)
-    return max(min(ratio, 1.0), 0.0)
+    return compute_depreciation_factor(elapsed_years, useful_life_years)
 

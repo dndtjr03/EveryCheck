@@ -1,0 +1,2 @@
+# Let's Encrypt 등으로 받은 fullchain.pem, privkey.pem 을 두고
+# nginx.conf 의 443 server 블록 주석을 해제한 뒤 이 디렉터리를 compose 에 마운트하세요.

@@ -2,6 +2,7 @@
 
 import enum
 from datetime import datetime, date
+from typing import Optional
 
 from sqlalchemy import (
     Boolean,
@@ -11,11 +12,12 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Session, relationship
 
 from database import Base
 
@@ -115,8 +117,72 @@ class RepairEstimate(Base):
     # 감가상각 비율(예: 0.3 이면 30%만 임차인 부담)
     depreciation_rate = Column(Float, nullable=False)
 
+    # AI 비동기 분석 결과 (Celery 파이프라인에서 갱신)
+    part = Column(String(255), nullable=True)
+    damage_type = Column(String(128), nullable=True)
+    estimated_cost = Column(Float, nullable=True)
+    ai_confidence = Column(Float, nullable=True)
+
+    # 분석 대상 이미지 바이트 무결성(SHA-256 등), 중복·변조 검증용
+    image_hash = Column(String(64), nullable=True, index=True)
+
+    # 비동기 AI 분석 상태: pending / analyzing / completed / failed
+    analysis_status = Column(String(32), nullable=False, default="pending")
+    celery_task_id = Column(String(128), nullable=True, index=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_repair_estimates_real_estate_created", "real_estate_id", "created_at"),
+    )
 
     real_estate = relationship("RealEstate", back_populates="repair_estimates")
     damage_image = relationship("DamageImage", back_populates="repair_estimates")
+
+
+def apply_ai_analysis_result(
+    db: Session,
+    repair_estimate_id: int,
+    *,
+    part: Optional[str],
+    damage_type: Optional[str],
+    cost_total: float,
+    estimated_cost: float,
+    confidence: Optional[float],
+    image_hash: Optional[str],
+) -> Optional[RepairEstimate]:
+    """Gemini 등 AI 분석이 끝난 뒤 repair_estimates 행을 갱신한다.
+
+    - cost_total: AI가 산출한 총 수리비(Cost_total)
+    - estimated_cost: worker에서 `utils.compute_moliti_depreciation_tenant_cost`로 산출한
+      감가상각 반영 후 임차인 부담액(최종 추정)
+    """
+    from utils import calculate_depreciation_rate
+
+    est = db.query(RepairEstimate).filter(RepairEstimate.id == repair_estimate_id).first()
+    if est is None:
+        return None
+
+    cost_total = max(float(cost_total), 0.0)
+    estimated_cost = max(float(estimated_cost), 0.0)
+    est.part = part
+    est.damage_type = damage_type
+    est.total_repair_cost = cost_total
+    est.estimated_cost = estimated_cost
+    est.tenant_cost = estimated_cost
+    est.ai_confidence = confidence
+    est.image_hash = image_hash
+    est.analysis_status = "completed"
+    est.depreciation_rate = calculate_depreciation_rate(
+        elapsed_years=est.elapsed_years,
+        useful_life_years=est.useful_life_years,
+    )
+    return est
+
+
+def mark_analysis_failed(db: Session, repair_estimate_id: int) -> None:
+    """AI 분석 실패 시 상태만 failed로 둔다."""
+    est = db.query(RepairEstimate).filter(RepairEstimate.id == repair_estimate_id).first()
+    if est is not None:
+        est.analysis_status = "failed"
 

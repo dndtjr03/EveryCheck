@@ -238,3 +238,9 @@ __pycache__/
 *.pyc
 .cursor/
 .venv/
+
+# Flutter
+Flutter(front)/.dart_tool/
+Flutter(front)/build/
+Flutter(front)/.flutter-plugins
+Flutter(front)/.flutter-plugins-dependencies

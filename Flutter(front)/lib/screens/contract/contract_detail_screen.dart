@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../config/app_theme.dart';
 import '../../models/real_estate.dart';
-import '../../models/repair_estimate.dart';
 import '../../services/api_service.dart';
 import '../../services/contract_service.dart';
 import '../../widgets/common/error_view.dart';
@@ -71,7 +71,7 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
   }
 
   Widget _buildDetail(RealEstate c) {
-    final fmt = (DateTime d) =>
+    String fmt(DateTime d) =>
         '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';
 
     return RefreshIndicator(
@@ -129,8 +129,8 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: c.damageImages.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) {
+                separatorBuilder: (context, i) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
                   final img = c.damageImages[i];
                   return ClipRRect(
                     borderRadius: BorderRadius.circular(12),
@@ -139,7 +139,7 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
                       width: 120,
                       height: 120,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                      errorBuilder: (context, error, stack) => Container(
                         width: 120,
                         color: Colors.grey[200],
                         child: const Icon(Icons.broken_image, color: Colors.grey),
@@ -149,10 +149,6 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
                 },
               ),
             ),
-          const SizedBox(height: 16),
-          // 수리비 산출 목록
-          _SectionHeader(title: 'AI 분석 결과 (${c.repairEstimates.length})'),
-          ...c.repairEstimates.map((e) => _EstimateCard(estimate: e)),
         ],
       ),
     );
@@ -171,9 +167,9 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: Colors.black45),
+          Icon(icon, size: 16, color: AppColors.n400),
           const SizedBox(width: 8),
-          Text('$label: ', style: const TextStyle(color: Colors.black45, fontSize: 13)),
+          Text('$label: ', style: const TextStyle(color: AppColors.n400, fontSize: 13)),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 13))),
         ],
       ),
@@ -192,102 +188,8 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         const Spacer(),
-        if (action != null) action!,
+        ?action,
       ],
-    );
-  }
-}
-
-class _EstimateCard extends StatelessWidget {
-  final RepairEstimate estimate;
-  const _EstimateCard({required this.estimate});
-
-  @override
-  Widget build(BuildContext context) {
-    final statusColor = switch (estimate.analysisStatus) {
-      AnalysisStatus.completed => Colors.green,
-      AnalysisStatus.failed => Colors.red,
-      AnalysisStatus.analyzing => Colors.orange,
-      _ => Colors.grey,
-    };
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (estimate.part != null)
-                  Text(estimate.part!, style: const TextStyle(fontWeight: FontWeight.w600)),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    estimate.analysisStatus.label,
-                    style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            if (estimate.damageType != null) ...[
-              const SizedBox(height: 4),
-              Text('손상 종류: ${estimate.damageType}', style: const TextStyle(fontSize: 12, color: Colors.black54)),
-            ],
-            if (estimate.isCompleted) ...[
-              const Divider(height: 16),
-              Row(
-                children: [
-                  _CostChip('총 수리비', '${_fmt(estimate.totalRepairCost)}원'),
-                  const SizedBox(width: 8),
-                  _CostChip('임차인 부담', '${_fmt(estimate.tenantCost)}원', highlight: true),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '감가상각 ${estimate.tenantSharePercent.toStringAsFixed(0)}% 적용 (경과 ${estimate.elapsedYears.toStringAsFixed(1)}년)',
-                style: const TextStyle(fontSize: 11, color: Colors.black38),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _fmt(double v) => v.toStringAsFixed(0).replaceAllMapped(
-        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-        (m) => '${m[1]},',
-      );
-}
-
-class _CostChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool highlight;
-  const _CostChip(this.label, this.value, {this.highlight = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: highlight ? const Color(0xFFEEF3FF) : Colors.grey[100],
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TextStyle(fontSize: 10, color: highlight ? const Color(0xFF3D7BFF) : Colors.black45)),
-          Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: highlight ? const Color(0xFF3D7BFF) : Colors.black87)),
-        ],
-      ),
     );
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/user.dart';
@@ -13,7 +12,7 @@ class AuthService {
   Future<User> login({required String email, required String password}) async {
     final resp = await http.post(
       Uri.parse('${AppConfig.baseUrl}/auth/token'),
-      headers: {HttpHeaders.contentTypeHeader: 'application/x-www-form-urlencoded'},
+      headers: {'content-type': 'application/x-www-form-urlencoded'},
       body: {'username': email, 'password': password},
     );
     if (resp.statusCode != 200) {
@@ -55,4 +54,9 @@ class AuthService {
     final token = await _api.getAccessToken();
     return token != null && token.isNotEmpty;
   }
+
+  Future<String?> getSavedToken() => _api.getAccessToken();
+
+  Future<void> saveAdminToken(String token) =>
+      _api.saveTokens(access: token, refresh: token);
 }

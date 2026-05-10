@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
+import '../../config/app_theme.dart';
 import '../../providers/contract_provider.dart';
-import '../contract/contract_list_screen.dart';
+import '../analysis/image_upload_screen.dart';
+import '../profile/profile_screen.dart';
+import '../records/records_screen.dart';
+import '../report/report_screen.dart';
 import 'home_tab.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -15,54 +18,111 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _tabs = const [
-    HomeTab(),
-    ContractListScreen(),
-    _PlaceholderTab(icon: Icons.map_outlined, label: '지도'),
-    _PlaceholderTab(icon: Icons.info_outline, label: '정보'),
+  static const _tabs = [
+    _TabItem(id: 'home',    emoji: '🏠', label: '홈'),
+    _TabItem(id: 'analyze', emoji: '📷', label: '분석'),
+    _TabItem(id: 'records', emoji: '📋', label: '기록'),
+    _TabItem(id: 'report',  emoji: '📄', label: '리포트'),
+    _TabItem(id: 'profile', emoji: '👤', label: '내 정보'),
   ];
+
+  late final List<Widget> _screens = [
+    HomeTab(onNavigate: _navigateTo),
+    const ImageUploadScreen(),
+    const RecordsScreen(),
+    const ReportScreen(),
+    const ProfileScreen(),
+  ];
+
+  void _navigateTo(int index) {
+    setState(() => _currentIndex = index);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ContractProvider>().loadContracts();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _tabs),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (i) {
-          if (i == 1) {
-            context.read<ContractProvider>().loadContracts();
-          }
-          setState(() => _currentIndex = i);
-        },
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: '홈'),
-          NavigationDestination(icon: Icon(Icons.article_outlined), selectedIcon: Icon(Icons.article), label: '계약'),
-          NavigationDestination(icon: Icon(Icons.map_outlined), selectedIcon: Icon(Icons.map), label: '지도'),
-          NavigationDestination(icon: Icon(Icons.info_outline), selectedIcon: Icon(Icons.info), label: '정보'),
-        ],
+      backgroundColor: AppColors.bg,
+      body: IndexedStack(index: _currentIndex, children: _screens),
+      bottomNavigationBar: _BottomNav(
+        activeIndex: _currentIndex,
+        tabs: _tabs,
+        onTap: (i) => setState(() => _currentIndex = i),
       ),
     );
   }
 }
 
-class _PlaceholderTab extends StatelessWidget {
-  final IconData icon;
+class _TabItem {
+  final String id;
+  final String emoji;
   final String label;
-  const _PlaceholderTab({required this.icon, required this.label});
+  const _TabItem({required this.id, required this.emoji, required this.label});
+}
+
+class _BottomNav extends StatelessWidget {
+  final int activeIndex;
+  final List<_TabItem> tabs;
+  final ValueChanged<int> onTap;
+
+  const _BottomNav({
+    required this.activeIndex,
+    required this.tabs,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(label)),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 56, color: Colors.black26),
-            const SizedBox(height: 12),
-            Text('$label 화면 준비 중', style: const TextStyle(color: Colors.black45)),
-          ],
-        ),
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border, width: 1)),
+      ),
+      padding: EdgeInsets.only(
+        top: 6,
+        bottom: MediaQuery.of(context).padding.bottom + 6,
+      ),
+      child: Row(
+        children: List.generate(tabs.length, (i) {
+          final t = tabs[i];
+          final active = i == activeIndex;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onTap(i),
+              behavior: HitTestBehavior.opaque,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.primaryLight : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(t.emoji, style: const TextStyle(fontSize: 22)),
+                    const SizedBox(height: 2),
+                    Text(
+                      t.label,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+                        color: active ? AppColors.primary : AppColors.n400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
@@ -24,6 +23,9 @@ class ApiService {
   Future<String?> getAccessToken() => _storage.read(key: AppConfig.accessTokenKey);
   Future<String?> getRefreshToken() => _storage.read(key: AppConfig.refreshTokenKey);
 
+  Future<bool> get isAdminToken async =>
+      (await getAccessToken()) == 'test01';
+
   Future<void> saveTokens({required String access, required String refresh}) async {
     await _storage.write(key: AppConfig.accessTokenKey, value: access);
     await _storage.write(key: AppConfig.refreshTokenKey, value: refresh);
@@ -37,8 +39,8 @@ class ApiService {
   Future<Map<String, String>> _authHeaders() async {
     final token = await getAccessToken();
     return {
-      HttpHeaders.contentTypeHeader: 'application/json',
-      if (token != null) HttpHeaders.authorizationHeader: 'Bearer $token',
+      'content-type': 'application/json',
+      if (token != null) 'authorization': 'Bearer $token',
     };
   }
 
@@ -62,21 +64,26 @@ class ApiService {
     return _handleResponse(resp);
   }
 
-  // ── POST (form-data, 파일 업로드) ─────────────────────────────────────────
+  // ── POST (multipart — 웹/모바일 공통, bytes 사용) ─────────────────────────
 
   Future<dynamic> postMultipart(
     String path, {
     required Map<String, String> fields,
-    required File file,
+    required List<int> fileBytes,
+    required String fileName,
     required String fileField,
   }) async {
     final token = await getAccessToken();
     final request = http.MultipartRequest('POST', _uri(path));
     if (token != null) {
-      request.headers[HttpHeaders.authorizationHeader] = 'Bearer $token';
+      request.headers['authorization'] = 'Bearer $token';
     }
     request.fields.addAll(fields);
-    request.files.add(await http.MultipartFile.fromPath(fileField, file.path));
+    request.files.add(http.MultipartFile.fromBytes(
+      fileField,
+      fileBytes,
+      filename: fileName,
+    ));
 
     final streamed = await _client.send(request);
     final resp = await http.Response.fromStream(streamed);

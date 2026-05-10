@@ -55,7 +55,7 @@ class _ContractListScreenState extends State<ContractListScreen> {
     if (provider.loading && provider.contracts.isEmpty) {
       return ListView.builder(
         itemCount: 4,
-        itemBuilder: (_, __) => const ContractCardSkeleton(),
+        itemBuilder: (context, _) => const ContractCardSkeleton(),
       );
     }
     if (provider.error != null && provider.contracts.isEmpty) {

@@ -1,6 +1,6 @@
 class AppConfig {
-  static const String baseUrl = 'http://10.0.2.2:8000'; // 안드로이드 에뮬레이터 → localhost
-  // static const String baseUrl = 'http://localhost:8000'; // 웹/iOS 시뮬레이터용
+  // static const String baseUrl = 'http://10.0.2.2:8000'; // 안드로이드 에뮬레이터용
+  static const String baseUrl = 'http://localhost:8000'; // 웹/iOS 시뮬레이터용
 
   static const String appName = '다봐드림';
   static const String appVersion = '1.0.0';

@@ -5,7 +5,8 @@
       "Bash(flutter pub *)",
       "Bash(dir Flutter\\(front\\)\\\\lib *)",
       "Bash(flutter devices *)",
-      "Bash(flutter run *)"
+      "Bash(flutter run *)",
+      "Bash(powershell *)"
     ]
   }
 }

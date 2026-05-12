@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 from models import DamageTypeEnum
 
@@ -24,6 +24,19 @@ class UserCreate(UserBase):
     """회원 가입 시 사용하는 스키마."""
 
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("비밀번호는 8자 이상이어야 합니다.")
+        if len(v) > 128:
+            raise ValueError("비밀번호는 128자 이하여야 합니다.")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("비밀번호에 숫자를 1개 이상 포함해야 합니다.")
+        if not any(c.isalpha() for c in v):
+            raise ValueError("비밀번호에 영문자를 1개 이상 포함해야 합니다.")
+        return v
 
 
 class UserRead(UserBase):

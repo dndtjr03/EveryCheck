@@ -1,0 +1,17 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "adb reverse 8000",
+            "type": "shell",
+            "command": "C:\\Android\\platform-tools\\adb.exe",
+            "args": ["reverse", "tcp:8000", "tcp:8000"],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "showReuseMessage": false
+            },
+            "problemMatcher": []
+        }
+    ]
+}

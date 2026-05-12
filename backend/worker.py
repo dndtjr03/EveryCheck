@@ -49,7 +49,13 @@ def _clamp01(value: Optional[Any]) -> Optional[float]:
     return max(0.0, min(1.0, x))
 
 
-@celery_app.task(name="worker.analyze_image_task")
+@celery_app.task(
+    name="worker.analyze_image_task",
+    autoretry_for=(Exception,),
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=120,
+)
 def analyze_image_task(repair_estimate_id: int) -> dict[str, Any]:
     """S3에 올라간 손상 이미지를 Gemini로 분석하고 repair_estimates를 갱신한다."""
     api_key = os.getenv("GOOGLE_API_KEY")

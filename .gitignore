@@ -240,7 +240,9 @@ __pycache__/
 .venv/
 
 # Flutter
-Flutter(front)/.dart_tool/
-Flutter(front)/build/
-Flutter(front)/.flutter-plugins
-Flutter(front)/.flutter-plugins-dependencies
+Flutter/.dart_tool/
+Flutter/build/
+Flutter/.flutter-plugins
+Flutter/.flutter-plugins-dependencies
+
+.claude

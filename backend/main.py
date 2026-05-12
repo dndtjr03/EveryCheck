@@ -186,8 +186,9 @@ from slowapi import _rate_limit_exceeded_handler  # noqa: E402
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# DB 테이블 생성 (간단한 예제에서는 앱 시작 시 자동 생성)
-Base.metadata.create_all(bind=engine)
+# 스키마 관리는 Alembic 마이그레이션으로 일원화한다.
+# (이전: Base.metadata.create_all(bind=engine) — Alembic과 혼용 시 이력 추적 실패)
+# 배포 시: alembic upgrade head 를 컨테이너 진입점/CI에서 실행할 것.
 
 
 @app.on_event("startup")
@@ -598,7 +599,7 @@ async def analyze_damage_image(
         analysis_status="analyzing",
     )
     db.add(estimate)
-    db.flush()
+    db.commit()  # commit 먼저 → Celery 워커가 DB에서 행을 확실히 찾을 수 있음
 
     from worker import analyze_image_task
 

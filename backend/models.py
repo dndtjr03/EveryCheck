@@ -1,7 +1,7 @@
 """서비스 도메인에 대한 SQLAlchemy ORM 모델 정의."""
 
 import enum
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
 )
@@ -40,7 +41,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     # 한 사용자는 여러 개의 임대차 계약을 가질 수 있다.
     real_estates = relationship("RealEstate", back_populates="owner")
@@ -59,7 +60,7 @@ class RealEstate(Base):
     contract_end_date = Column(Date, nullable=True)
     memo = Column(Text, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     owner = relationship("User", back_populates="real_estates")
     damage_images = relationship("DamageImage", back_populates="real_estate")
@@ -86,7 +87,7 @@ class DamageImage(Base):
     # 파일 무결성 검증을 위한 SHA-256 해시값
     file_hash = Column(String(64), nullable=False, index=True)
 
-    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     real_estate = relationship("RealEstate", back_populates="damage_images")
     repair_estimates = relationship("RepairEstimate", back_populates="damage_image")
@@ -102,8 +103,8 @@ class RepairEstimate(Base):
     real_estate_id = Column(Integer, ForeignKey("real_estates.id"), nullable=False, index=True)
     damage_image_id = Column(Integer, ForeignKey("damage_images.id"), nullable=True, index=True)
 
-    # 총 수리비 (원 단위)
-    total_repair_cost = Column(Float, nullable=False)
+    # 총 수리비 (원 단위) — 부동소수점 오차 방지를 위해 NUMERIC 사용
+    total_repair_cost = Column(Numeric(12, 0), nullable=False)
 
     # 내용연수(내구연수) - 기본 10년 (벽지/장판 기준), 상황에 따라 변경 가능
     useful_life_years = Column(Float, nullable=False, default=10.0)
@@ -111,8 +112,8 @@ class RepairEstimate(Base):
     # 경과 연수 (년 단위, 소수점 허용)
     elapsed_years = Column(Float, nullable=False)
 
-    # 임차인 부담 비용 (공식에 따라 계산된 결과)
-    tenant_cost = Column(Float, nullable=False)
+    # 임차인 부담 비용 (원 단위) — 부동소수점 오차 방지를 위해 NUMERIC 사용
+    tenant_cost = Column(Numeric(12, 0), nullable=False)
 
     # 감가상각 비율(예: 0.3 이면 30%만 임차인 부담)
     depreciation_rate = Column(Float, nullable=False)
@@ -120,7 +121,7 @@ class RepairEstimate(Base):
     # AI 비동기 분석 결과 (Celery 파이프라인에서 갱신)
     part = Column(String(255), nullable=True)
     damage_type = Column(String(128), nullable=True)
-    estimated_cost = Column(Float, nullable=True)
+    estimated_cost = Column(Numeric(12, 0), nullable=True)  # 원 단위 추정 부담액
     ai_confidence = Column(Float, nullable=True)
 
     # 분석 대상 이미지 바이트 무결성(SHA-256 등), 중복·변조 검증용
@@ -130,7 +131,7 @@ class RepairEstimate(Base):
     analysis_status = Column(String(32), nullable=False, default="pending")
     celery_task_id = Column(String(128), nullable=True, index=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     __table_args__ = (
         Index("ix_repair_estimates_real_estate_created", "real_estate_id", "created_at"),

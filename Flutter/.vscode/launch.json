@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "EveryCheck",
+            "request": "launch",
+            "type": "dart",
+            "preLaunchTask": "adb reverse 8000"
+        },
+        {
+            "name": "EveryCheck (profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile",
+            "preLaunchTask": "adb reverse 8000"
+        },
+        {
+            "name": "EveryCheck (release mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release",
+            "preLaunchTask": "adb reverse 8000"
+        }
+    ]
+}

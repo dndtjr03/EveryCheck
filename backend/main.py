@@ -186,6 +186,10 @@ from slowapi import _rate_limit_exceeded_handler  # noqa: E402
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Flutter 앱이 Gemini 키를 들고 다니지 않게 백엔드가 대신 호출하는 프록시 라우터
+from analysis_proxy_router import router as analysis_proxy_router  # noqa: E402
+app.include_router(analysis_proxy_router)
+
 # 스키마 관리는 Alembic 마이그레이션으로 일원화한다.
 # (이전: Base.metadata.create_all(bind=engine) — Alembic과 혼용 시 이력 추적 실패)
 # 배포 시: alembic upgrade head 를 컨테이너 진입점/CI에서 실행할 것.

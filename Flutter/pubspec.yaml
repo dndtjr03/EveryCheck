@@ -38,6 +38,17 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   image_picker: ^1.1.2
   shimmer: ^3.0.0
+  # 로컬 DB (분석 기록, 채팅 메시지, 사진 메타)
+  sqflite: ^2.3.3
+  path: ^1.9.0
+  path_provider: ^2.1.4
+  # Gemini API 직접 호출 (분석)
+  google_generative_ai: ^0.4.6
+  # PDF 생성·미리보기·공유
+  pdf: ^3.11.1
+  printing: ^5.13.4
+  # 날짜 포맷
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:

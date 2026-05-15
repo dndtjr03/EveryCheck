@@ -1,13 +1,17 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
-import '../../models/damage_image.dart';
+import '../../local/analysis_repository.dart';
+import '../../models/analysis_local.dart';
 import '../../models/real_estate.dart';
 import '../../providers/contract_provider.dart';
-import '../../services/analysis_service.dart';
-import '../../services/api_service.dart';
+import '../contract/contract_form_screen.dart';
+import 'analysis_chat_screen.dart';
 
 /// 한 장의 선택된 사진 (파일 + 디코딩된 바이트).
 class _PickedPhoto {
@@ -44,6 +48,22 @@ class _ContractSelectScreen extends StatelessWidget {
         title: const Text('사진 업로드',
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
         surfaceTintColor: Colors.transparent,
+        actions: [
+          IconButton(
+            tooltip: '계약 추가',
+            icon: const Icon(Icons.add, color: AppColors.primary),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const ContractFormScreen()),
+              );
+              if (context.mounted) {
+                await context.read<ContractProvider>().loadContracts();
+              }
+            },
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Divider(height: 1, color: borderOf(context)),
@@ -150,18 +170,41 @@ class _EmptyContracts extends StatelessWidget {
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Text('📋', style: TextStyle(fontSize: 48)),
-            SizedBox(height: 16),
-            Text(
+          children: [
+            const Text('📋', style: TextStyle(fontSize: 48)),
+            const SizedBox(height: 16),
+            const Text(
               '등록된 계약이 없어요',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
-            SizedBox(height: 8),
-            Text(
-              '계약 탭에서 계약을 먼저 등록해주세요',
+            const SizedBox(height: 8),
+            const Text(
+              '먼저 계약을 등록한 뒤 사진을 분석해보세요',
               style: TextStyle(fontSize: 13, color: AppColors.n500),
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const ContractFormScreen()),
+                );
+                if (context.mounted) {
+                  await context.read<ContractProvider>().loadContracts();
+                }
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('계약 추가하기'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(220, 48),
+                shape: const StadiumBorder(),
+                textStyle: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700),
+              ),
             ),
           ],
         ),
@@ -183,8 +226,8 @@ class _PhotoUploadScreen extends StatefulWidget {
 class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
   static const int _maxPerGroup = 30;
 
-  final _picker          = ImagePicker();
-  final _analysisService = AnalysisService(ApiService());
+  final _picker = ImagePicker();
+  final _repo = AnalysisRepository.instance;
 
   final List<_PickedPhoto> _moveInPhotos  = [];
   final List<_PickedPhoto> _moveOutPhotos = [];
@@ -358,6 +401,8 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
     );
   }
 
+  /// 사진을 앱 문서 폴더에 복사하고 SQLite에 분석 세션 생성 후 채팅 화면으로 진입.
+  /// (서버 도입 전 임시 구현 — 도입 시 upload API 호출로 교체)
   Future<void> _saveImages() async {
     final total = _moveInPhotos.length + _moveOutPhotos.length;
     if (total == 0) {
@@ -372,38 +417,55 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
     });
 
     try {
-      for (final p in _moveInPhotos) {
-        await _analysisService.uploadImage(
-          realEstateId: widget.contract.id,
-          imageFile: p.file,
-          damageType: DamageType.other,
+      // 1) 분석 세션 생성
+      final analysisId = await _repo.createAnalysis(
+        contractId: widget.contract.id,
+        contractAddr: widget.contract.address,
+      );
+
+      // 2) 사진 파일을 앱 문서 폴더 하위에 복사
+      final docs = await getApplicationDocumentsDirectory();
+      final photosDir = Directory(p.join(docs.path, 'photos', '$analysisId'));
+      await photosDir.create(recursive: true);
+
+      int order = 0;
+      Future<void> save(_PickedPhoto photo, PhotoGroup group) async {
+        final ext = p.extension(photo.file.path).isEmpty
+            ? '.jpg'
+            : p.extension(photo.file.path);
+        final dest = File(p.join(photosDir.path, '${group.name}_$order$ext'));
+        await dest.writeAsBytes(photo.bytes);
+        await _repo.addPhoto(
+          analysisId: analysisId,
+          filePath: dest.path,
+          group: group,
+          orderIndex: order,
         );
+        order++;
         if (!mounted) return;
         setState(() => _uploadProgress++);
       }
+
+      for (final p in _moveInPhotos) {
+        await save(p, PhotoGroup.moveIn);
+      }
       for (final p in _moveOutPhotos) {
-        await _analysisService.uploadImage(
-          realEstateId: widget.contract.id,
-          imageFile: p.file,
-          damageType: DamageType.other,
-        );
-        if (!mounted) return;
-        setState(() => _uploadProgress++);
+        await save(p, PhotoGroup.moveOut);
       }
 
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _uploadProgress = 0;
-        _uploadTotal = 0;
         _moveInPhotos.clear();
         _moveOutPhotos.clear();
       });
-      _showSnack('사진 $total장이 저장됐어요 ✓', AppColors.secondary);
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() => _uploading = false);
-      _showSnack(e.message, AppColors.danger);
+
+      // 3) 채팅 화면으로 진입
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => AnalysisChatScreen(analysisId: analysisId),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _uploading = false);

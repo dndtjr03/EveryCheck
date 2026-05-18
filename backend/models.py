@@ -31,6 +31,13 @@ class DamageTypeEnum(str, enum.Enum):
     other = "other"  # 기타 손상
 
 
+class PhotoTypeEnum(str, enum.Enum):
+    """사진 구분: 입주·점검 시점(최초) vs 손상 후."""
+
+    INITIAL = "INITIAL"
+    DAMAGED = "DAMAGED"
+
+
 class User(Base):
     """서비스 사용자 정보를 저장하는 테이블."""
 
@@ -45,6 +52,57 @@ class User(Base):
 
     # 한 사용자는 여러 개의 임대차 계약을 가질 수 있다.
     real_estates = relationship("RealEstate", back_populates="owner")
+    checklists = relationship("Checklist", back_populates="user")
+    photos = relationship("Photo", back_populates="owner")
+
+
+class Checklist(Base):
+    """사용자별 체크리스트(퇴거 점검 등)를 저장하는 테이블."""
+
+    __tablename__ = "checklists"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    user = relationship("User", back_populates="checklists")
+    photos = relationship("Photo", back_populates="checklist")
+
+
+class Photo(Base):
+    """체크리스트·사용자에 연결된 사진 메타데이터(S3 URL 등)를 저장하는 테이블."""
+
+    __tablename__ = "photos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    checklist_id = Column(
+        Integer,
+        ForeignKey("checklists.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    image_url = Column(String(1024), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    description = Column(String(1024), nullable=True)
+    photo_type = Column(
+        Enum(PhotoTypeEnum, native_enum=False, length=16),
+        nullable=False,
+        default=PhotoTypeEnum.INITIAL,
+    )
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (Index("ix_photos_checklist_photo_type", "checklist_id", "photo_type"),)
+
+    owner = relationship("User", back_populates="photos")
+    checklist = relationship("Checklist", back_populates="photos")
 
 
 class RealEstate(Base):

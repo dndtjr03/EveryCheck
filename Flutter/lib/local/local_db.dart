@@ -18,9 +18,20 @@ class LocalDb {
     final path = p.join(docs.path, 'everycheck_local.db');
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  /// 마이그레이션 분기.
+  /// v1 → v2: damage_photos 에 s3_url TEXT 컬럼 추가 (AWS S3 백업 URL).
+  Future<void> _onUpgrade(Database db, int oldV, int newV) async {
+    if (oldV < 2) {
+      await db.execute(
+        'ALTER TABLE damage_photos ADD COLUMN s3_url TEXT;',
+      );
+    }
   }
 
   Future<void> _onCreate(Database db, int v) async {
@@ -43,7 +54,8 @@ class LocalDb {
       CREATE TABLE damage_photos (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         analysis_id INTEGER NOT NULL,
-        file_path   TEXT NOT NULL,              -- 로컬 파일 경로
+        file_path   TEXT NOT NULL,              -- 로컬 파일 경로 (진실 소스)
+        s3_url      TEXT,                       -- AWS S3 백업 URL (성공 시)
         group_type  TEXT NOT NULL,              -- move_in / move_out
         order_index INTEGER NOT NULL,
         analyzed    INTEGER NOT NULL DEFAULT 0, -- 0/1

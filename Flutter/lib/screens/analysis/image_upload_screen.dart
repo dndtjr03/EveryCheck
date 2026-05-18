@@ -10,6 +10,7 @@ import '../../local/analysis_repository.dart';
 import '../../models/analysis_local.dart';
 import '../../models/real_estate.dart';
 import '../../providers/contract_provider.dart';
+import '../../services/photo_upload_service.dart';
 import '../contract/contract_form_screen.dart';
 import 'analysis_chat_screen.dart';
 
@@ -228,6 +229,7 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
 
   final _picker = ImagePicker();
   final _repo = AnalysisRepository.instance;
+  final _photoUploader = PhotoUploadService.instance;
 
   final List<_PickedPhoto> _moveInPhotos  = [];
   final List<_PickedPhoto> _moveOutPhotos = [];
@@ -423,7 +425,9 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
         contractAddr: widget.contract.address,
       );
 
-      // 2) 사진 파일을 앱 문서 폴더 하위에 복사
+      // 2) 사진 파일을 앱 문서 폴더 하위에 복사 + S3 백업 업로드
+      //   - 로컬 SQLite가 진실 소스 (분석·PDF의 기본). S3 실패해도 흐름 안 막음.
+      //   - S3 URL은 영구 public URL 형식이라 PDF 임베드·시연 공유에 그대로 사용 가능.
       final docs = await getApplicationDocumentsDirectory();
       final photosDir = Directory(p.join(docs.path, 'photos', '$analysisId'));
       await photosDir.create(recursive: true);
@@ -435,22 +439,29 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
             : p.extension(photo.file.path);
         final dest = File(p.join(photosDir.path, '${group.name}_$order$ext'));
         await dest.writeAsBytes(photo.bytes);
-        await _repo.addPhoto(
+        final photoId = await _repo.addPhoto(
           analysisId: analysisId,
           filePath: dest.path,
           group: group,
           orderIndex: order,
         );
+
+        // S3 업로드 (영구 public URL 반환). 실패 시 null → 로컬만 유지.
+        final s3Url = await _photoUploader.uploadSingle(dest);
+        if (s3Url != null) {
+          await _repo.setPhotoS3Url(photoId, s3Url);
+        }
+
         order++;
         if (!mounted) return;
         setState(() => _uploadProgress++);
       }
 
-      for (final p in _moveInPhotos) {
-        await save(p, PhotoGroup.moveIn);
+      for (final photo in _moveInPhotos) {
+        await save(photo, PhotoGroup.moveIn);
       }
-      for (final p in _moveOutPhotos) {
-        await save(p, PhotoGroup.moveOut);
+      for (final photo in _moveOutPhotos) {
+        await save(photo, PhotoGroup.moveOut);
       }
 
       if (!mounted) return;

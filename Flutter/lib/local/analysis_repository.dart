@@ -94,6 +94,17 @@ class AnalysisRepository {
     );
   }
 
+  /// 사진의 S3 백업 URL을 기록 (업로드 성공 후 호출).
+  Future<void> setPhotoS3Url(int photoId, String s3Url) async {
+    final db = await LocalDb.instance.database;
+    await db.update(
+      'damage_photos',
+      {'s3_url': s3Url},
+      where: 'id = ?',
+      whereArgs: [photoId],
+    );
+  }
+
   // ── Messages ─────────────────────────────────────────────────────────────
 
   Future<int> addMessage({

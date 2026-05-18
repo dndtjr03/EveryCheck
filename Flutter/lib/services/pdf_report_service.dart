@@ -1,11 +1,12 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../local/analysis_repository.dart';
 
@@ -27,12 +28,30 @@ class PdfReportService {
       throw Exception('분석 세션을 찾을 수 없어요.');
     }
     final photos = await repo.listPhotos(analysisId);
-    final analyzed = photos.where((p) => p.analyzed).toList();
+    // 분석 실패한 사진도 PDF에 포함 (분석 정보 없음으로 표시).
+    // analyzed=true 만 포함하면 첫 분석 실패한 사진이 PDF에서 사라져 사용자가 혼란.
+    final analyzed = photos.toList();
 
-    // 한글 폰트 (Google Fonts CDN에서 가져옴 — printing 패키지 제공)
-    final regular = await PdfGoogleFonts.notoSansKRRegular();
-    final bold = await PdfGoogleFonts.notoSansKRBold();
-    final theme = pw.ThemeData.withFont(base: regular, bold: bold);
+    // 한글 폰트 (앱 번들 자산 — assets/fonts/).
+    // 기존: PdfGoogleFonts.notoSansKRRegular() — 인터넷에서 CDN 다운로드 필요해서
+    //       오프라인·불안정 망에서 폰트 로드 실패 시 한글이 □로 깨졌음.
+    // 변경: pubspec.yaml에 등록한 NanumGothic .ttf를 rootBundle에서 직접 로드.
+    final regularData = await rootBundle.load(
+      'assets/fonts/NanumGothic-Regular.ttf',
+    );
+    final boldData = await rootBundle.load(
+      'assets/fonts/NanumGothic-Bold.ttf',
+    );
+    final regular = pw.Font.ttf(regularData);
+    final bold = pw.Font.ttf(boldData);
+    final theme = pw.ThemeData.withFont(
+      base: regular,
+      bold: bold,
+      italic: regular,
+      boldItalic: bold,
+      // 한글 폰트에 없는 글리프(이모지 등)는 다시 한글 폰트로 폴백 → 두부(□) 방지.
+      fontFallback: [regular],
+    );
 
     final doc = pw.Document(theme: theme);
     final dateFmt = DateFormat('yyyy.MM.dd HH:mm');
@@ -108,14 +127,39 @@ class PdfReportService {
     for (var i = 0; i < analyzed.length; i++) {
       final ph = analyzed[i];
       Map<String, dynamic> r = {};
-      try {
-        r = jsonDecode(ph.aiResultJson!) as Map<String, dynamic>;
-      } catch (_) {}
+      final hasAnalysis = ph.analyzed && ph.aiResultJson != null;
+      if (hasAnalysis) {
+        try {
+          r = jsonDecode(ph.aiResultJson!) as Map<String, dynamic>;
+        } catch (_) {}
+      }
 
-      final imgFile = File(ph.filePath);
-      final imgBytes =
-          imgFile.existsSync() ? imgFile.readAsBytesSync() : null;
-      final image = imgBytes != null ? pw.MemoryImage(imgBytes) : null;
+      // 사진 로딩: 경로/존재 여부/디코딩 단계마다 분리해서 어디서 실패하는지
+      // 디버그 콘솔에 남긴다. 사용자가 "PDF에 사진이 안 들어간다"고 할 때 진단용.
+      pw.MemoryImage? image;
+      String? loadError;
+      try {
+        final imgFile = File(ph.filePath);
+        if (!imgFile.existsSync()) {
+          loadError = '파일 없음: ${ph.filePath}';
+          dev.log('PDF photo missing: ${ph.filePath}', name: 'pdf');
+        } else {
+          final imgBytes = imgFile.readAsBytesSync();
+          if (imgBytes.isEmpty) {
+            loadError = '파일이 비어 있음';
+            dev.log('PDF photo empty: ${ph.filePath}', name: 'pdf');
+          } else {
+            image = pw.MemoryImage(imgBytes);
+            dev.log(
+              'PDF photo loaded: ${ph.filePath} (${imgBytes.length} bytes)',
+              name: 'pdf',
+            );
+          }
+        }
+      } catch (e, st) {
+        loadError = '로딩 오류: $e';
+        dev.log('PDF photo load failed', name: 'pdf', error: e, stackTrace: st);
+      }
 
       doc.addPage(pw.Page(
         pageFormat: PdfPageFormat.a4,
@@ -141,9 +185,26 @@ class PdfReportService {
                     color: PdfColor.fromInt(0xFFF3F4F6),
                     borderRadius: pw.BorderRadius.circular(6),
                   ),
-                  child: pw.Text('(사진을 불러올 수 없습니다)',
-                      style: pw.TextStyle(
-                          color: PdfColor.fromInt(0xFF999999))),
+                  child: pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      pw.Text(
+                        '(사진을 불러올 수 없습니다)',
+                        style: pw.TextStyle(
+                            color: PdfColor.fromInt(0xFF999999)),
+                      ),
+                      if (loadError != null) ...[
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          loadError,
+                          style: pw.TextStyle(
+                            fontSize: 9,
+                            color: PdfColor.fromInt(0xFFB85520),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               pw.SizedBox(height: 16),
               _kv('부위', r['part']?.toString() ?? '-'),

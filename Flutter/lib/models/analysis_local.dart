@@ -79,6 +79,8 @@ class DamagePhoto {
   final int id;
   final int analysisId;
   final String filePath;
+  /// AWS S3 백업 URL. 업로드 실패/네트워크 오프라인 시 null.
+  final String? s3Url;
   final PhotoGroup group;
   final int orderIndex;
   final bool analyzed;
@@ -88,6 +90,7 @@ class DamagePhoto {
     required this.id,
     required this.analysisId,
     required this.filePath,
+    this.s3Url,
     required this.group,
     required this.orderIndex,
     required this.analyzed,
@@ -98,6 +101,7 @@ class DamagePhoto {
         id: m['id'] as int,
         analysisId: m['analysis_id'] as int,
         filePath: m['file_path'] as String,
+        s3Url: m['s3_url'] as String?,
         group: PhotoGroup.fromString(m['group_type'] as String),
         orderIndex: m['order_index'] as int,
         analyzed: (m['analyzed'] as int) == 1,

@@ -7,11 +7,8 @@ import '../../local/analysis_repository.dart';
 import '../../models/analysis_local.dart';
 import '../analysis/analysis_chat_screen.dart';
 
-/// 기록 탭.
-///
-/// SQLite `analyses` 테이블을 직접 읽어서 보여준다.
-/// 서버 미연동 상태에서도 영구 보관됨 (앱 재시작·재로그인 후에도 살아있음).
-/// 서버 도입 시 `AnalysisRepository`를 remote-backed로 교체하면 화면 그대로 사용 가능.
+/// 기록 탭 — SQLite `analyses` 테이블 직접 사용 (서버 미연동 영구 저장).
+/// 서버 도입 시 `AnalysisRepository`만 remote-backed로 교체.
 class RecordsScreen extends StatefulWidget {
   const RecordsScreen({super.key});
 
@@ -22,7 +19,7 @@ class RecordsScreen extends StatefulWidget {
 class _RecordsScreenState extends State<RecordsScreen> {
   final _repo = AnalysisRepository.instance;
   List<AnalysisSession> _sessions = [];
-  Map<int, int> _photoCounts = {}; // analysisId → photo count
+  Map<int, int> _photoCounts = {};
   bool _loading = true;
 
   @override
@@ -34,11 +31,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final sessions = await _repo.listAnalyses();
-    // 각 세션 사진 수도 같이 불러와서 카드에 표시
     final counts = <int, int>{};
     for (final s in sessions) {
-      final photos = await _repo.listPhotos(s.id);
-      counts[s.id] = photos.length;
+      counts[s.id] = (await _repo.listPhotos(s.id)).length;
     }
     if (!mounted) return;
     setState(() {
@@ -54,7 +49,8 @@ class _RecordsScreenState extends State<RecordsScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('기록 삭제'),
-        content: Text('"${s.contractAddr}"의 분석 기록을 삭제할까요?\n(채팅·사진·결과 모두 사라집니다.)'),
+        content: Text(
+            '"${s.contractAddr}"의 분석 기록을 삭제할까요?\n(채팅·사진·결과 모두 사라집니다.)'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -69,7 +65,6 @@ class _RecordsScreenState extends State<RecordsScreen> {
     );
     if (ok != true) return;
     await _repo.deleteAnalysis(s.id);
-    // 사진 파일도 같이 지우면 좋지만 그건 추후 정리 (저장공간 절약용)
     await _load();
   }
 
@@ -96,8 +91,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
       ),
       body: _loading
           ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            )
+              child: CircularProgressIndicator(color: AppColors.primary))
           : RefreshIndicator(
               color: AppColors.primary,
               onRefresh: _load,
@@ -136,12 +130,12 @@ class _RecordsScreenState extends State<RecordsScreen> {
                     ..._sessions.map((s) => _AnalysisCard(
                           session: s,
                           photoCount: _photoCounts[s.id] ?? 0,
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  AnalysisChatScreen(analysisId: s.id),
-                            ),
-                          ).then((_) => _load()),
+                          onTap: () => Navigator.of(context)
+                              .push(MaterialPageRoute(
+                                builder: (_) =>
+                                    AnalysisChatScreen(analysisId: s.id),
+                              ))
+                              .then((_) => _load()),
                           onLongPress: () => _confirmDelete(s),
                         )),
                 ],
@@ -214,8 +208,6 @@ class _AnalysisCard extends StatelessWidget {
       AnalysisStatus.completed => const Color(0xFF2A9060),
     };
 
-    final thumbnailPath = _firstThumbnail(session.id);
-
     return GestureDetector(
       onTap: onTap,
       onLongPress: onLongPress,
@@ -238,7 +230,15 @@ class _AnalysisCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _Thumbnail(path: thumbnailPath),
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.n100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                      child: Text('🏠', style: TextStyle(fontSize: 22))),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -256,8 +256,8 @@ class _AnalysisCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        dateFmt.format(
-                            session.completedAt ?? session.startedAt),
+                        dateFmt
+                            .format(session.completedAt ?? session.startedAt),
                         style: const TextStyle(
                             fontSize: 12, color: AppColors.n500),
                       ),
@@ -302,33 +302,6 @@ class _AnalysisCard extends StatelessWidget {
       ),
     );
   }
-
-  /// 카드 썸네일용으로 첫 사진 경로를 추측 (실제로는 비동기 조회가 더 정확하지만,
-  /// 가벼운 카드용이라 광고용 placeholder로 충분히 동작).
-  String? _firstThumbnail(int _) => null;
-}
-
-class _Thumbnail extends StatelessWidget {
-  final String? path;
-  const _Thumbnail({this.path});
-
-  @override
-  Widget build(BuildContext context) {
-    if (path != null && File(path!).existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.file(File(path!), width: 44, height: 44, fit: BoxFit.cover),
-      );
-    }
-    return Container(
-      width: 44, height: 44,
-      decoration: BoxDecoration(
-        color: AppColors.n100,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: const Center(child: Text('🏠', style: TextStyle(fontSize: 22))),
-    );
-  }
 }
 
 class _Chip extends StatelessWidget {
@@ -348,4 +321,11 @@ class _Chip extends StatelessWidget {
       child: Text(label, style: TextStyle(fontSize: 12, color: fg)),
     );
   }
+}
+
+// ignore: unused_element
+File? _safeFile(String? path) {
+  if (path == null) return null;
+  final f = File(path);
+  return f.existsSync() ? f : null;
 }

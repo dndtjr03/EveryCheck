@@ -171,10 +171,80 @@ _DEFAULT_SYSTEM = """당신은 한국 임대차 분쟁 자문 보조 AI "다봐�
 """
 
 
+# 채팅 1회당 검색할 소스별 결과 수.
+# - 단일 query()만 호출하면 단가(repair_price)가 71청크로 가장 많아 상위 결과를
+#   독차지하고 판례·법령이 밀려나는 현상이 있어, 소스 종류별로 따로 조회해 섞는다.
+# - 합계 4건. (기존 6건에서 줄여 Gemini system prompt 토큰 절약 → 응답 시작 ↑)
+# - law는 현재 ChromaDB 적재 0건이라 mix에서 제외 (향후 적재 시 복원).
+_RAG_MIX: list[tuple[str, int]] = [
+    ("repair_price", 1),   # LH 표준단가표
+    ("precedent", 2),      # 판례
+    ("interpretation", 1), # 법령해석례
+]
+
+# 청크 본문을 시스템 프롬프트에 넣을 때 자르는 길이. 600 → 350으로 줄여 토큰 절약.
+_CHUNK_PREVIEW_CHARS = 350
+
+
+def _retrieve_rag_context(query: str) -> str:
+    """source_type별로 분리 검색해 다양성을 확보한 RAG 컨텍스트 문자열.
+
+    인덱스가 비어 있거나 로드 실패해도 채팅은 계속되도록 빈 문자열 반환.
+    """
+    try:
+        from rag import get_default_index  # 지연 로드 (초기 임포트 비용 회피)
+        index = get_default_index()
+        if index.count() == 0:
+            return ""
+        hits = []
+        for st, k in _RAG_MIX:
+            try:
+                hits.extend(index.query(query, n_results=k, source_type=st))
+            except Exception as exc:
+                logger.warning("RAG source_type=%s 검색 실패: %s", st, exc)
+        # 유사도 내림차순 정렬 (다양성 + 정확도 균형)
+        hits.sort(key=lambda h: h.score, reverse=True)
+    except Exception as exc:
+        logger.warning("RAG 검색 실패 (채팅은 계속 진행): %s", exc)
+        return ""
+
+    if not hits:
+        return ""
+
+    blocks: list[str] = []
+    for i, h in enumerate(hits, start=1):
+        meta = h.metadata or {}
+        src = meta.get("source_type", "")
+        if src == "law":
+            label = f"[법령] {meta.get('law_name','')} {meta.get('article_no','')}"
+        elif src == "precedent":
+            label = f"[판례] {meta.get('court','')} {meta.get('case_no','')}"
+        elif src == "interpretation":
+            label = f"[해석례] {meta.get('title','')}"
+        elif src == "repair_price":
+            price = meta.get("unit_price")
+            unit = meta.get("unit", "")
+            price_part = f" = {int(price):,}원{unit}" if isinstance(price, (int, float)) else ""
+            label = (
+                f"[표준단가] {meta.get('category','')} / "
+                f"{meta.get('item','')}{price_part}"
+            )
+        else:
+            label = "[참고]"
+        url = meta.get("source_url", "")
+        url_part = f" ({url})" if url else ""
+        blocks.append(
+            f"근거 {i} (유사도 {h.score:.2f}) {label}{url_part}\n"
+            f"{h.text[:_CHUNK_PREVIEW_CHARS]}"
+        )
+
+    return "\n\n".join(blocks)
+
+
 @router.post(
     "/chat",
     response_model=ChatResponse,
-    summary="분석 결과 + 후속 질문을 가지고 Gemini와 양방향 채팅",
+    summary="분석 결과 + 후속 질문 + 판례 RAG 컨텍스트를 묶어 Gemini 양방향 채팅",
 )
 async def chat(
     body: ChatRequest,
@@ -188,7 +258,27 @@ async def chat(
             detail="메시지가 비어 있습니다.",
         )
 
-    system_instruction = body.system_context or _DEFAULT_SYSTEM
+    # RAG: source_type별로 분리 검색 (단가 2 + 판례 2 + 법령 1 + 해석례 1).
+    # 자세한 분배는 _RAG_MIX 참고.
+    rag_context = _retrieve_rag_context(body.message)
+
+    base_system = body.system_context or _DEFAULT_SYSTEM
+    if rag_context:
+        system_instruction = (
+            f"{base_system}\n\n"
+            "다음은 두 가지 출처에서 임베딩한 관련 근거입니다.\n"
+            " (1) 법제처 OpenAPI에서 수집한 법령·판례·해석례\n"
+            " (2) LH 한국토지주택공사 2023년 퇴거세대 원상복구비 표준단가표\n"
+            "답변할 때 가능한 한 이 근거를 인용하세요.\n"
+            "- 법률 인용 예: '주택임대차보호법 제6조의2', '대법원 2018다252410'\n"
+            "- 단가 인용 예: '벽지 도배 14,100원/㎡ (LH 2023 표준단가)'\n"
+            "수리비 금액을 추정할 때는 표준단가가 있으면 단가 × 면적(또는 수량) - "
+            "감가상각률 적용으로 계산 근거를 함께 제시하세요. "
+            "감가상각률 = 경과연수 / 수선주기.\n\n"
+            f"[관련 근거]\n{rag_context}"
+        )
+    else:
+        system_instruction = base_system
 
     try:
         model = genai.GenerativeModel(

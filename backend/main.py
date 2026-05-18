@@ -6,9 +6,23 @@
 - 수리비/감가상각(RepairEstimate) 계산 및 저장
 """
 
-import os
+# auth 등 프로젝트 모듈이 import 될 때 os.environ 에 JWT·DB 값이 있어야 하므로,
+# 반드시 먼저 저장소 루트의 .env 를 로드한다 (backend/.env 는 보조).
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+_backend_dir = Path(__file__).resolve().parent
+_root_dir = _backend_dir.parent
+load_dotenv(_root_dir / ".env")
+load_dotenv(_backend_dir / ".env", override=False)
+
+import os
 from typing import List, Optional
+
+from utils import normalize_aws_credentials
+
+normalize_aws_credentials()
 
 from fastapi import (
     Body,
@@ -27,6 +41,7 @@ from fastapi.openapi.docs import (
     get_swagger_ui_html,
     get_swagger_ui_oauth2_redirect_html,
 )
+from fastapi.openapi.utils import get_openapi
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
 from jose import JWTError, jwt
@@ -50,6 +65,8 @@ from auth import (
     get_user_by_email,
 )
 from database import Base, engine, get_db
+from routers import photo
+from routers.checklist import router as checklist_router
 from security_audit import init_security_audit_logger, log_sensitive_endpoint_access
 from models import DamageTypeEnum, DamageImage, RealEstate, RepairEstimate, User
 from utils import (
@@ -75,11 +92,78 @@ app = FastAPI(
 )
 
 _STATIC_ROOT = Path(__file__).resolve().parent / "static"
+_UPLOADS_ROOT = Path(__file__).resolve().parent / "uploads"
+_UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
+
+# 업로드 파일: /static/uploads/<파일명> (Swagger UI 정적 파일 /static/swagger-ui/* 와 충돌 방지를 위해 하위 경로 사용)
+app.mount(
+    "/static/uploads",
+    StaticFiles(directory=str(_UPLOADS_ROOT)),
+    name="uploads",
+)
 app.mount(
     "/static",
     StaticFiles(directory=str(_STATIC_ROOT)),
     name="static",
 )
+
+app.include_router(
+    checklist_router,
+    prefix="/checklists",
+    tags=["checklists"],
+)
+
+app.include_router(
+    photo.router,
+    prefix="/photos",
+    tags=["photos"],
+)
+
+# Flutter 앱이 Gemini 키를 들고 다니지 않게 백엔드가 대신 호출하는 프록시 라우터
+from analysis_proxy_router import router as analysis_proxy_router  # noqa: E402
+app.include_router(analysis_proxy_router)
+
+# RAG (법제처 OpenAPI + ChromaDB) 검색 라우터
+from routers.precedents import router as precedents_router  # noqa: E402
+app.include_router(precedents_router)
+
+
+def _patch_file_upload_property(prop: dict) -> None:
+    if prop.get("contentMediaType") == "application/octet-stream":
+        prop["format"] = "binary"
+        return
+    items = prop.get("items")
+    if isinstance(items, dict) and items.get("contentMediaType") == "application/octet-stream":
+        items["format"] = "binary"
+
+
+def _patch_multipart_file_binary_format(openapi_schema: dict) -> None:
+    """로컬 Swagger UI가 multipart file 필드를 file input으로 렌더링하도록 format 추가."""
+    schemas = (openapi_schema.get("components") or {}).get("schemas") or {}
+    for schema in schemas.values():
+        if not isinstance(schema, dict):
+            continue
+        for key in ("file", "files"):
+            prop = schema.get("properties", {}).get(key)
+            if isinstance(prop, dict):
+                _patch_file_upload_property(prop)
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    _patch_multipart_file_binary_format(openapi_schema)
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 
 @app.get("/docs", include_in_schema=False)
@@ -186,10 +270,6 @@ from slowapi import _rate_limit_exceeded_handler  # noqa: E402
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Flutter 앱이 Gemini 키를 들고 다니지 않게 백엔드가 대신 호출하는 프록시 라우터
-from analysis_proxy_router import router as analysis_proxy_router  # noqa: E402
-app.include_router(analysis_proxy_router)
-
 # 스키마 관리는 Alembic 마이그레이션으로 일원화한다.
 # (이전: Base.metadata.create_all(bind=engine) — Alembic과 혼용 시 이력 추적 실패)
 # 배포 시: alembic upgrade head 를 컨테이너 진입점/CI에서 실행할 것.
@@ -198,6 +278,34 @@ app.include_router(analysis_proxy_router)
 @app.on_event("startup")
 def _startup_init_audit_log() -> None:
     init_security_audit_logger()
+
+
+@app.on_event("startup")
+def _startup_warmup_rag() -> None:
+    """RAG 임베딩 모델·ChromaDB를 백그라운드에서 미리 로드.
+
+    첫 채팅 요청 시 ko-sroberta 모델(약 400MB)을 처음 메모리에 올리느라
+    1~3초가 추가로 걸리는 현상을 제거하기 위함. 메인 startup을 블로킹하지
+    않도록 별도 스레드에서 dummy query를 1회 실행하고, 실패해도 채팅은
+    on-demand 로드로 계속 동작한다.
+    """
+    import threading
+    import logging
+
+    log = logging.getLogger("rag.warmup")
+
+    def _warm() -> None:
+        try:
+            from rag import get_default_index
+
+            idx = get_default_index()
+            # 임베딩 + Chroma 쿼리 경로를 모두 한 번씩 실행해 캐시 적재.
+            idx.query("워밍업", n_results=1)
+            log.info("RAG warmup done — chunks=%d", idx.count())
+        except Exception as exc:  # noqa: BLE001
+            log.warning("RAG warmup skipped (will load on first chat): %s", exc)
+
+    threading.Thread(target=_warm, name="rag-warmup", daemon=True).start()
 
 
 def _check_database() -> tuple[bool, Optional[str]]:
@@ -694,6 +802,56 @@ def create_repair_estimate(
     db.refresh(estimate)
 
     return estimate
+
+
+@app.post(
+    "/photos/upload-single",
+    summary="단순 사진 업로드 → S3 (분석·체크리스트와 무관)",
+    description=(
+        "Flutter 분석 화면이 폰 로컬 SQLite에 저장한 사진을 백엔드 S3에 백업할 때 사용. "
+        "DB에 별도 행을 만들지 않고 S3 URL만 반환한다. 클라이언트는 로컬 DB의 "
+        "damage_photos.s3_url 컬럼에 받은 URL을 저장한다."
+    ),
+)
+@limiter.limit("30/minute")
+async def upload_single_photo(
+    request: Request,
+    file: UploadFile = File(..., description="JPEG/PNG/WEBP 이미지 1장"),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """체크리스트/분석 모델과 분리된 단일 사진 S3 업로드 엔드포인트.
+
+    Flutter 측 로컬 SQLite가 진실 소스이고, S3는 백업·공유용으로만 사용된다.
+    검증·해시·업로드 절차는 기존 /analyze 엔드포인트의 패턴을 그대로 따른다.
+    """
+    try:
+        file_bytes, detected_mime = await validate_and_read_image_file(file)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    bucket_name = os.getenv("S3_BUCKET_NAME", "")
+    if not bucket_name:
+        raise HTTPException(
+            status_code=503,
+            detail="S3_BUCKET_NAME 환경 변수가 비어 있습니다.",
+        )
+
+    try:
+        s3_url = await upload_image_to_s3(
+            file,
+            bucket_name=bucket_name,
+            body=file_bytes,
+            content_type=detected_mime,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {
+        "s3_url": s3_url,
+        "image_hash": compute_image_hash_sha256(file_bytes),
+        "content_type": detected_mime,
+        "bytes": len(file_bytes),
+    }
 
 
 @app.get(

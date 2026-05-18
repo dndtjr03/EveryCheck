@@ -8,10 +8,10 @@ import '../../models/analysis_local.dart';
 import '../../models/pdf_pricing.dart';
 import '../../services/pdf_report_service.dart';
 
-/// 리포트(PDF) 탭.
+/// PDF 리포트 탭.
 ///
-/// - 인자 없이 진입: 완료된 분석 목록을 보여주고 선택 → PDF 생성
-/// - `analysisId` 지정 진입: 해당 분석의 PDF 생성 화면으로 바로 이동
+/// - 인자 없이 진입: 완료된 분석 목록 → 선택 → 가격 계산 → 결제 → PDF
+/// - `analysisId` 지정: 해당 분석 상세 결제 화면으로 바로 이동
 class ReportScreen extends StatelessWidget {
   final int? analysisId;
   const ReportScreen({super.key, this.analysisId});
@@ -155,7 +155,8 @@ class _PricingCard extends StatelessWidget {
         children: [
           const Text('요금 안내',
               style: TextStyle(
-                  fontSize: 14, fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
                   color: AppColors.n700)),
           const SizedBox(height: 8),
           _row('기본 (10페이지 포함)', won.format(PdfPricing.basePrice)),
@@ -172,7 +173,8 @@ class _PricingCard extends StatelessWidget {
           children: [
             Expanded(
                 child: Text(k,
-                    style: const TextStyle(fontSize: 13, color: AppColors.n700))),
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.n700))),
             Text(v,
                 style: const TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w700)),
@@ -219,8 +221,8 @@ class _AnalysisRow extends StatelessWidget {
                   Text(
                     DateFormat('yyyy.MM.dd HH:mm')
                         .format(session.completedAt ?? session.startedAt),
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.n500),
+                    style:
+                        const TextStyle(fontSize: 11, color: AppColors.n500),
                   ),
                 ],
               ),
@@ -347,13 +349,12 @@ class _ReportDetailScreenState extends State<_ReportDetailScreen> {
                 const SizedBox(height: 4),
                 Text(
                   '분석 완료: ${DateFormat('yyyy.MM.dd HH:mm').format(_session!.completedAt ?? _session!.startedAt)}',
-                  style: const TextStyle(
-                      fontSize: 12, color: AppColors.n500),
+                  style:
+                      const TextStyle(fontSize: 12, color: AppColors.n500),
                 ),
                 const Divider(height: 24),
-                _kv('손상 분석 건수', '${_damageCount}건'),
-                _kv('예상 페이지 수',
-                    '${pages}p (표지+요약+손상×$_damageCount+법조)'),
+                _kv('손상 분석 건수', '$_damageCount건'),
+                _kv('예상 페이지 수', '${pages}p (표지+요약+손상×$_damageCount+법조)'),
                 _kv('기본 가격', won.format(PdfPricing.basePrice)),
                 if (pages > PdfPricing.basePageQuota)
                   _kv('초과 페이지 추가요금',
@@ -403,8 +404,9 @@ class _ReportDetailScreenState extends State<_ReportDetailScreen> {
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed:
-                _paying || _generating ? null : (_paid ? _generateAndPreview : _mockPay),
+            onPressed: _paying || _generating
+                ? null
+                : (_paid ? _generateAndPreview : _mockPay),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.accent,
               disabledBackgroundColor: AppColors.n200,
@@ -413,7 +415,8 @@ class _ReportDetailScreenState extends State<_ReportDetailScreen> {
             ),
             child: _paying
                 ? const SizedBox(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white),
                   )

@@ -33,6 +33,7 @@ dependencies:
 
   cupertino_icons: ^1.0.8
   http: ^1.2.2
+  http_parser: ^4.0.2
   shared_preferences: ^2.3.3
   provider: ^6.1.2
   flutter_secure_storage: ^9.2.2
@@ -42,12 +43,12 @@ dependencies:
   sqflite: ^2.3.3
   path: ^1.9.0
   path_provider: ^2.1.4
-  # Gemini API 직접 호출 (분석)
+  # Gemini 백엔드 프록시 호출용 — GeminiChatTurn 타입 재사용 위해 패키지 유지
   google_generative_ai: ^0.4.6
   # PDF 생성·미리보기·공유
   pdf: ^3.11.1
   printing: ^5.13.4
-  # 날짜 포맷
+  # 날짜·통화 포맷
   intl: ^0.20.2
 
 dev_dependencies:
@@ -71,6 +72,19 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # PDF 리포트용 한글 폰트 (Google Fonts CDN 의존 제거).
+  # PdfGoogleFonts는 인터넷 필요 → 시연 환경에서 폰트 다운로드 실패 시 글자가 □로
+  # 깨지는 문제가 있어 앱에 번들로 포함한다. NanumGothic은 SIL OFL 라이선스.
+  fonts:
+    - family: NanumGothic
+      fonts:
+        - asset: assets/fonts/NanumGothic-Regular.ttf
+        - asset: assets/fonts/NanumGothic-Bold.ttf
+          weight: 700
+
+  assets:
+    - assets/fonts/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

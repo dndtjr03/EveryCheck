@@ -22,7 +22,7 @@ from typing import Iterable
 from dotenv import load_dotenv
 
 from .chroma_index import get_default_index
-from .chunking import chunk_any, chunk_repair_price
+from .chunking import chunk_any, chunk_repair_price, chunk_static_laws
 from .lawgokr_client import LawGoKrClient, TargetType
 
 load_dotenv()
@@ -124,6 +124,29 @@ def run_preset(preset: Iterable[tuple[TargetType, str, int]]) -> int:
     return grand_total
 
 
+def ingest_static_laws(json_path: Path | None = None) -> int:
+    """정적 작성한 법령 JSON → ChromaDB 적재.
+
+    기본 위치: backend/data/static_laws/rental_core.json
+    법제처 OpenAPI 본문 조회 실패를 우회해 핵심 조문을 직접 임베딩한다.
+    """
+    if json_path is None:
+        backend_dir = Path(__file__).resolve().parent.parent
+        json_path = backend_dir / "data" / "static_laws" / "rental_core.json"
+    if not json_path.exists():
+        logger.error("정적 법령 JSON을 찾을 수 없습니다: %s", json_path)
+        return 0
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    chunks = chunk_static_laws(payload)
+    if not chunks:
+        logger.error("청크 생성 실패: %s", json_path)
+        return 0
+    index = get_default_index()
+    index.upsert(chunks)
+    logger.info("static_laws 적재 완료: %d chunks", len(chunks))
+    return len(chunks)
+
+
 def ingest_repair_prices(json_path: Path | None = None) -> int:
     """LH 표준단가표 OCR JSON → ChromaDB 적재.
 
@@ -205,7 +228,26 @@ def main() -> int:
         "--repair-prices-path",
         help="단가표 JSON 경로 직접 지정 (--ingest-repair-prices와 함께 사용)",
     )
+    p.add_argument(
+        "--ingest-static-laws",
+        action="store_true",
+        help="정적 작성한 법령 JSON을 ChromaDB에 적재 "
+        "(backend/data/static_laws/rental_core.json). "
+        "법제처 OpenAPI 본문 조회 실패를 우회.",
+    )
+    p.add_argument(
+        "--static-laws-path",
+        help="법령 JSON 경로 직접 지정 (--ingest-static-laws와 함께 사용)",
+    )
     args = p.parse_args()
+
+    if args.ingest_static_laws:
+        path = Path(args.static_laws_path) if args.static_laws_path else None
+        ingest_static_laws(path)
+        index = get_default_index()
+        logger.info("ChromaDB stats: %s",
+                    json.dumps(index.stats(), ensure_ascii=False))
+        return 0
 
     if args.ingest_repair_prices:
         path = Path(args.repair_prices_path) if args.repair_prices_path else None

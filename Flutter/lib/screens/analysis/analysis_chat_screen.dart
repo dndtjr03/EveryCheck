@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../config/app_theme.dart';
@@ -132,34 +133,89 @@ class _AnalysisChatScreenState extends State<AnalysisChatScreen> {
     setState(() => _analyzing = true);
     await _repo.updateAnalysisStatus(
         widget.analysisId, AnalysisStatus.inProgress);
-    await _addMessage(ChatRole.ai, '🔍 분석을 시작합니다. 사진 ${_photos.length}장을 차례로 확인할게요.');
+
+    // 입주/퇴거 분리. 비교 모드 vs 단독 모드 결정.
+    final moveIns = _photos.where((p) => p.group == PhotoGroup.moveIn).toList();
+    final moveOuts =
+        _photos.where((p) => p.group == PhotoGroup.moveOut).toList();
+    final useBaseline = moveIns.isNotEmpty && moveOuts.isNotEmpty;
+
+    // baseline 비교에서는 퇴거 사진만 분석 대상, 입주 사진은 비교용으로만 사용.
+    final targets = useBaseline ? moveOuts : _photos;
+
+    await _addMessage(
+      ChatRole.ai,
+      useBaseline
+          ? '🔍 분석을 시작합니다. 입주 사진 ${moveIns.length}장과 퇴거 사진 '
+              '${moveOuts.length}장을 비교해 "새로 생긴 손상"만 식별할게요.'
+          : '🔍 분석을 시작합니다. 사진 ${_photos.length}장을 차례로 확인할게요.\n'
+              '(입주 사진이 없어 비교 없이 단독 분석합니다.)',
+    );
+
+    // 입주 사진들 bytes를 한 번만 미리 읽어 메모리에 보관 (퇴거 사진마다 재전송).
+    List<Uint8List> moveInBytes = const [];
+    if (useBaseline) {
+      moveInBytes = await Future.wait(
+        moveIns.map((p) => File(p.filePath).readAsBytes()),
+      );
+    }
 
     final results = <Map<String, dynamic>>[];
     int totalCost = 0;
 
-    for (int i = 0; i < _photos.length; i++) {
-      final photo = _photos[i];
+    for (int i = 0; i < targets.length; i++) {
+      final photo = targets[i];
       try {
         final bytes = await File(photo.filePath).readAsBytes();
-        final raw = await _ai.analyzePhoto(bytes);
+        final Map<String, dynamic> raw;
+        if (useBaseline) {
+          raw = await _ai.analyzePhotoWithBaseline(
+            moveOutBytes: bytes,
+            moveInBytesList: moveInBytes,
+          );
+        } else {
+          raw = await _ai.analyzePhoto(bytes);
+        }
         await _repo.markPhotoAnalyzed(photo.id, jsonEncode(raw));
         results.add(raw);
 
         final cost = (raw['cost'] as num?)?.toInt() ?? 0;
-        totalCost += cost;
+        // 기존 손상(임차인 부담 가능성 낮음)은 총액에서 제외.
+        final isNew = raw['is_new'];
+        if (isNew != false) {
+          totalCost += cost;
+        }
 
         final part = raw['part'] ?? '미상';
         final dtype = raw['damage_type'] ?? '미상';
         final conf = ((raw['confidence'] as num?) ?? 0).toDouble();
         final reason = raw['reason'] ?? '추가 설명 없음';
+        final matchedIdx = raw['matched_move_in_index'];
 
+        // 비교 결과 라벨
+        final String verdict;
+        if (isNew == true) {
+          verdict = '🆕 새로 생긴 손상 — 임차인 부담 가능성 ↑';
+        } else if (isNew == false) {
+          verdict = '🟢 입주 시 이미 있던 손상 — 임차인 부담 없음';
+        } else if (useBaseline) {
+          verdict = '🟡 판단 보류 (입주 사진과 매칭 어려움)';
+        } else {
+          verdict = '';
+        }
+
+        final matchedLine = (useBaseline && matchedIdx is int)
+            ? '- 비교한 입주 사진: $matchedIdx번\n'
+            : '';
+
+        final groupLabel = useBaseline ? '퇴거' : photo.group.label;
         final msg = '''
-📸 ${photo.group.label} 사진 ${i + 1}/${_photos.length}
-- 부위: $part
+📸 $groupLabel 사진 ${i + 1}/${targets.length}
+${verdict.isNotEmpty ? '$verdict\n' : ''}- 부위: $part
 - 손상: $dtype
 - 추정 수리비: ${_won(cost)}
 - 확신도: ${(conf * 100).toStringAsFixed(0)}%
-
+$matchedLine
 $reason
 ''';
         await _addMessage(ChatRole.ai, msg.trim(), photoId: photo.id);
@@ -172,8 +228,34 @@ $reason
       }
     }
 
-    // 요약 (짧게)
-    final summary = '''
+    // 요약. 비교 모드면 "새 손상 / 기존 손상 / 보류" 분포를 따로 보여준다.
+    int newDamage = 0;
+    int oldDamage = 0;
+    int unclear = 0;
+    for (final r in results) {
+      switch (r['is_new']) {
+        case true:
+          newDamage++;
+          break;
+        case false:
+          oldDamage++;
+          break;
+        default:
+          unclear++;
+      }
+    }
+
+    final summary = useBaseline
+        ? '''
+✅ 비교 분석 완료
+- 입주 사진: ${moveIns.length}장 (baseline)
+- 퇴거 사진: ${targets.length}장 (분석)
+- 🆕 새 손상: $newDamage건
+- 🟢 입주 시부터 있던 손상: $oldDamage건
+- 🟡 판단 보류: $unclear건
+- 추정 임차인 부담액: ${_won(totalCost)} (새 손상만 합산)
+'''
+        : '''
 ✅ 사진 분석 완료
 - 총 사진: ${_photos.length}장 (성공 ${results.length}건)
 - 추정 총 수리비: ${_won(totalCost)}

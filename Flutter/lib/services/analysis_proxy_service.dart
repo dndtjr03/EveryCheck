@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' show MediaType;
 
 import '../config/app_config.dart';
 import 'api_service.dart';
@@ -36,9 +40,69 @@ class AnalysisProxyService {
       fileBytes: imageBytes,
       fileName: 'photo.jpg',
       fileField: 'image',
+      fileContentType: 'image/jpeg',
     );
     if (result is Map<String, dynamic>) return result;
     throw const ProxyException('서버 응답이 JSON object가 아닙니다.');
+  }
+
+  /// 퇴거 사진 1장 + 입주 사진 N장을 함께 보내 baseline 비교 분석.
+  ///
+  /// `/proxy/analyze-with-baseline` 호출. Gemini가 입주 사진들 중 가장 비슷한
+  /// 1장을 자동 매칭해 비교한 뒤 "새로 생긴 손상"만 판별한다.
+  ///
+  /// 추가 응답 필드:
+  ///  - `is_new` (bool|null): 새 손상 여부
+  ///  - `matched_move_in_index` (int|null): 매칭된 입주 사진 번호 (1-based)
+  ///  - `move_in_count` (int): 비교에 사용된 입주 사진 수
+  ///
+  /// [moveInBytesList]가 비어 있으면 [ProxyException] — 호출자에서 사전 검증할 것.
+  Future<Map<String, dynamic>> analyzePhotoWithBaseline({
+    required Uint8List moveOutBytes,
+    required List<Uint8List> moveInBytesList,
+  }) async {
+    if (moveInBytesList.isEmpty) {
+      throw const ProxyException('입주 사진이 1장 이상 필요합니다.');
+    }
+    final uri = Uri.parse('${AppConfig.baseUrl}/proxy/analyze-with-baseline');
+    final req = http.MultipartRequest('POST', uri);
+    final token = await _api.getAccessToken();
+    // ignore: use_null_aware_elements
+    if (token != null) {
+      req.headers['authorization'] = 'Bearer $token';
+    }
+
+    // 입주 사진들: 같은 필드명(move_in_images)으로 여러 번 첨부.
+    for (var i = 0; i < moveInBytesList.length; i++) {
+      req.files.add(http.MultipartFile.fromBytes(
+        'move_in_images',
+        moveInBytesList[i],
+        filename: 'move_in_$i.jpg',
+        contentType: MediaType('image', 'jpeg'),
+      ));
+    }
+    req.files.add(http.MultipartFile.fromBytes(
+      'move_out_image',
+      moveOutBytes,
+      filename: 'move_out.jpg',
+      contentType: MediaType('image', 'jpeg'),
+    ));
+
+    final streamed = await http.Client().send(req);
+    final resp = await http.Response.fromStream(streamed);
+    final body = utf8.decode(resp.bodyBytes);
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      String detail = body;
+      try {
+        final j = jsonDecode(body);
+        detail = (j is Map && j['detail'] != null) ? j['detail'].toString() : body;
+      } catch (_) {}
+      throw ProxyException('baseline 비교 분석 실패 (${resp.statusCode}): $detail');
+    }
+    final decoded = jsonDecode(body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    throw const ProxyException('baseline 응답이 JSON object가 아닙니다.');
   }
 
   /// 양방향 채팅. 백엔드의 `/proxy/chat` 호출.

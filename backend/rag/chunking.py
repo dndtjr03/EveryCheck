@@ -469,6 +469,70 @@ def chunk_repair_price(raw: dict[str, Any]) -> list[Chunk]:
     return chunks
 
 
+# ── 정적 법령 (static_law) ────────────────────────────────────────────────
+
+
+def chunk_static_laws(raw: dict[str, Any]) -> list[Chunk]:
+    """정적으로 작성한 법령 JSON → ChromaDB 청크.
+
+    법제처 OpenAPI lawService.do 본문 조회가 일치 ID를 못 잡아 적재 0건이 된
+    문제를 우회. 임대차 분쟁 핵심 조문(민법 615/623/654/610·주임법·국토부
+    가이드라인·통상 손모 법리)을 직접 텍스트로 임베딩한다.
+
+    raw 구조: { "source": str, "laws": [{id, law_name, article_no, title, body, context, source_url}, ...] }
+    """
+    source = _safe_str(raw.get("source")) or "정적 적재 법령"
+    items = raw.get("laws") or []
+    if not isinstance(items, list):
+        return []
+
+    chunks: list[Chunk] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        item_id = _safe_str(it.get("id"))
+        law_name = _safe_str(it.get("law_name"))
+        article_no = _safe_str(it.get("article_no"))
+        title = _safe_str(it.get("title"))
+        body = _safe_str(it.get("body"))
+        context = _safe_str(it.get("context"))
+        url = _safe_str(it.get("source_url"))
+
+        if not body and not context:
+            continue
+
+        # 검색에 잘 잡히도록 헤더 + 본문 + 해설을 한 청크에 모음.
+        text_parts: list[str] = []
+        head = " ".join(p for p in (law_name, article_no, title) if p).strip()
+        if head:
+            text_parts.append(f"[{head}]")
+        if body:
+            text_parts.append(body)
+        if context:
+            text_parts.append(f"[해설] {context}")
+        text = "\n".join(text_parts).strip()
+
+        # 메타 source_type 은 기존 precedent/interpretation 패턴과 일관되게 "law" 사용.
+        # 채팅 라우터의 _RAG_MIX와 라벨 분기가 'law'를 기대함.
+        chunks.append(
+            Chunk(
+                chunk_id=f"law:static:{item_id or _slug(head) or 'item'}",
+                text=text,
+                metadata={
+                    "source_type": "law",
+                    "law_name": law_name,
+                    "article_no": article_no,
+                    "title": title,
+                    "source_url": url,
+                    "source": source,
+                    "is_static": True,
+                },
+            )
+        )
+
+    return chunks
+
+
 # ── 통합 ──────────────────────────────────────────────────────────────────
 
 
@@ -481,4 +545,6 @@ def chunk_any(target: str, raw: dict[str, Any]) -> Iterable[Chunk]:
         return chunk_interpretation(raw)
     if target == "repair_price":
         return chunk_repair_price(raw)
+    if target == "static_law":
+        return chunk_static_laws(raw)
     return []

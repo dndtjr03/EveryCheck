@@ -22,6 +22,7 @@ from .chunking import (
     chunk_law,
     chunk_precedent,
     chunk_repair_price,
+    chunk_static_laws,
 )
 from .lawgokr_client import LawGoKrClient
 
@@ -34,5 +35,6 @@ __all__ = [
     "chunk_precedent",
     "chunk_interpretation",
     "chunk_repair_price",
+    "chunk_static_laws",
     "LawGoKrClient",
 ]

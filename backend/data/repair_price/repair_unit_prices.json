@@ -1,0 +1,1051 @@
+{
+  "source": "LH 2023 퇴거세대 원상복구비 표준단가표",
+  "pages": {
+    "영구임대": [
+      {
+        "category": "욕실",
+        "item": "출입문짝(교체)",
+        "unit_price": 247100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "도어록",
+        "unit_price": 16100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "컵 대",
+        "unit_price": 35500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "비누대",
+        "unit_price": 35500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "수건걸이",
+        "unit_price": 51400,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "휴지걸이",
+        "unit_price": 39500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "타일 (벽체)",
+        "unit_price": 115100,
+        "unit": "/M2"
+      },
+      {
+        "category": "욕실",
+        "item": "타일 (바닥)",
+        "unit_price": 113700,
+        "unit": "/M2"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 도기",
+        "unit_price": 158800,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 수전",
+        "unit_price": 114000,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 폽업",
+        "unit_price": 34100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "샤워기 헤드",
+        "unit_price": 12700,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "샤워기 메탈호스",
+        "unit_price": 14500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "양변기 (원피스)",
+        "unit_price": 439200,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "출입문짝(교체)",
+        "unit_price": 247100,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "출입문짝(부분보수)",
+        "unit_price": 24700,
+        "unit": "원"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도어록",
+        "unit_price": 16100,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "장 판",
+        "unit_price": 20600,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도 배 (벽체)",
+        "unit_price": 14100,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도 배 (천정)",
+        "unit_price": 13500,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "석고보드",
+        "unit_price": 19400,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "방충망(스텐) 450*900",
+        "unit_price": 30700,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "콘센트",
+        "unit_price": 15200,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "스위치",
+        "unit_price": 11600,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관문짝(교체)",
+        "unit_price": 506600,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관문짝(부분보수)",
+        "unit_price": 50700,
+        "unit": "원"
+      },
+      {
+        "category": "현관",
+        "item": "도어록(레버형)",
+        "unit_price": 29100,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "도어체크",
+        "unit_price": 75300,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "도어스토퍼",
+        "unit_price": 6100,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관센서등",
+        "unit_price": 43700,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "고무패킹",
+        "unit_price": 6100,
+        "unit": "/M"
+      },
+      {
+        "category": "현관",
+        "item": "타일 (바닥)",
+        "unit_price": 100300,
+        "unit": "/M2"
+      },
+      {
+        "category": "주방",
+        "item": "렌지후드 (슬림형)",
+        "unit_price": 99200,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "렌지후드 (디럭스)",
+        "unit_price": 152200,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "싱크 수전헤드",
+        "unit_price": 14500,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "싱크수전 교체",
+        "unit_price": 105400,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "배수홈통",
+        "unit_price": 26600,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "주방가구 경첩",
+        "unit_price": 10300,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "주방가구 손잡이",
+        "unit_price": 9300,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "스텐상판 (W=600) FBQ21004",
+        "unit_price": 56700,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "상부장 (W=600)",
+        "unit_price": 136800,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "하부장 (W=600)",
+        "unit_price": 141600,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "식탁등",
+        "unit_price": 67400,
+        "unit": "/개"
+      },
+      {
+        "category": "발코니",
+        "item": "발코니등",
+        "unit_price": 43700,
+        "unit": "/개"
+      },
+      {
+        "category": "발코니",
+        "item": "타일 (바닥)",
+        "unit_price": 114800,
+        "unit": "/M2"
+      },
+      {
+        "category": "발코니",
+        "item": "도 장",
+        "unit_price": 7100,
+        "unit": "/M2"
+      },
+      {
+        "category": "소모성품목",
+        "item": "열쇠(복사)",
+        "unit_price": 5000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "출입카드",
+        "unit_price": 5000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "음식물카드",
+        "unit_price": 3300,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "욕조마개",
+        "unit_price": 2000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "변기커버",
+        "unit_price": 10000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "싱크 걸레마개",
+        "unit_price": 5000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "배수트랩",
+        "unit_price": 3000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "싱크스텐망",
+        "unit_price": 10000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "에어컨커버",
+        "unit_price": 2000,
+        "unit": "원"
+      }
+    ],
+    "국민임대": [
+      {
+        "category": "욕실",
+        "item": "출입문짝(교체)",
+        "unit_price": 247100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "도어록",
+        "unit_price": 16100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "컵 대",
+        "unit_price": 35500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "비누대",
+        "unit_price": 35500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "수건걸이",
+        "unit_price": 51400,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "휴지걸이",
+        "unit_price": 39500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "욕실장",
+        "unit_price": 98300,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "타일 (벽체)",
+        "unit_price": 115100,
+        "unit": "/M2"
+      },
+      {
+        "category": "욕실",
+        "item": "타일 (바닥)",
+        "unit_price": 113700,
+        "unit": "/M2"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 도기",
+        "unit_price": 158800,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 수전",
+        "unit_price": 114000,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 팝업",
+        "unit_price": 34100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "샤워기 헤드",
+        "unit_price": 12700,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "샤워기 메탈호스",
+        "unit_price": 14500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "양변기 (원피스)",
+        "unit_price": 439200,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "출입문짝(교체)",
+        "unit_price": 247100,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "출입문짝(부분보수)",
+        "unit_price": 24700,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도어록",
+        "unit_price": 16100,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도 배(벽체)",
+        "unit_price": 14100,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도 배(천정)",
+        "unit_price": 13500,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "장 판",
+        "unit_price": 20600,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "석고보드",
+        "unit_price": 19400,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "방충망(스텐) 450*900",
+        "unit_price": 30700,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "콘센트",
+        "unit_price": 15200,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "스위치",
+        "unit_price": 11600,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관문짝(교체)",
+        "unit_price": 506600,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관문짝(부분보수)",
+        "unit_price": 50700,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "도어록(레버형)",
+        "unit_price": 29100,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "도어체크",
+        "unit_price": 75300,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "도어스토퍼",
+        "unit_price": 6100,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관센서등",
+        "unit_price": 43700,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "고무패킹",
+        "unit_price": 6100,
+        "unit": "/M"
+      },
+      {
+        "category": "현관",
+        "item": "타일 (바닥)",
+        "unit_price": 100300,
+        "unit": "/M2"
+      },
+      {
+        "category": "주방",
+        "item": "렌지후드 (슬림형)",
+        "unit_price": 99200,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "렌지후드 (디럭스)",
+        "unit_price": 152200,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "싱크 수전헤드",
+        "unit_price": 14500,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "싱크수전 교체",
+        "unit_price": 105400,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "배수통통",
+        "unit_price": 26600,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "주방가구 경첩",
+        "unit_price": 10300,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "주방가구 손잡이",
+        "unit_price": 9300,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "나무상판 (W=600)",
+        "unit_price": 59000,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "인조대리석상판 (W=600)",
+        "unit_price": 85000,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "상부장 (W=600)",
+        "unit_price": 136800,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "하부장 (W=600)",
+        "unit_price": 141600,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "식탁등",
+        "unit_price": 67400,
+        "unit": "/개"
+      },
+      {
+        "category": "발코니",
+        "item": "발코니등",
+        "unit_price": 43700,
+        "unit": "/개"
+      },
+      {
+        "category": "발코니",
+        "item": "타일 (바닥)",
+        "unit_price": 114800,
+        "unit": "/M2"
+      },
+      {
+        "category": "발코니",
+        "item": "도 장",
+        "unit_price": 7100,
+        "unit": "/M2"
+      },
+      {
+        "category": "소모성품목",
+        "item": "열쇠(복사)",
+        "unit_price": 5000,
+        "unit": "/개"
+      },
+      {
+        "category": "소모성품목",
+        "item": "출입카드",
+        "unit_price": 5000,
+        "unit": "/개"
+      },
+      {
+        "category": "소모성품목",
+        "item": "음식물카드",
+        "unit_price": 3300,
+        "unit": "/개"
+      },
+      {
+        "category": "소모성품목",
+        "item": "욕조마개",
+        "unit_price": 2000,
+        "unit": "/개"
+      },
+      {
+        "category": "소모성품목",
+        "item": "변기커버",
+        "unit_price": 10000,
+        "unit": "/개"
+      },
+      {
+        "category": "소모성품목",
+        "item": "싱크 걸마개",
+        "unit_price": 5000,
+        "unit": "/개"
+      },
+      {
+        "category": "소모성품목",
+        "item": "배수트랩",
+        "unit_price": 3000,
+        "unit": "/개"
+      },
+      {
+        "category": "소모성품목",
+        "item": "싱크스텐망",
+        "unit_price": 10000,
+        "unit": "/개"
+      },
+      {
+        "category": "소모성품목",
+        "item": "에어컨커버",
+        "unit_price": 2000,
+        "unit": "/개"
+      }
+    ],
+    "공공임대": [
+      {
+        "category": "욕실",
+        "item": "출입문짝(교체)",
+        "unit_price": 247100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "도어록",
+        "unit_price": 16100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "컵 대",
+        "unit_price": 35500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "비누대",
+        "unit_price": 35500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "수건걸이",
+        "unit_price": 51400,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "휴지걸이",
+        "unit_price": 39500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "욕실장",
+        "unit_price": 98300,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "타일 (벽체)",
+        "unit_price": 115100,
+        "unit": "/M2"
+      },
+      {
+        "category": "욕실",
+        "item": "타일 (바닥)",
+        "unit_price": 113700,
+        "unit": "/M2"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 도기",
+        "unit_price": 158800,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 수전",
+        "unit_price": 114000,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "세면기 폽업",
+        "unit_price": 34100,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "샤워기 헤드",
+        "unit_price": 12700,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "샤워기 메탈호스",
+        "unit_price": 14500,
+        "unit": "/개"
+      },
+      {
+        "category": "욕실",
+        "item": "양변기(투피스)",
+        "unit_price": 439200,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "출입문짝(교체)",
+        "unit_price": 247100,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "출입문짝(부분보수)",
+        "unit_price": 24700,
+        "unit": "원"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도어록",
+        "unit_price": 16100,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "장 판",
+        "unit_price": 20600,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "합판마루",
+        "unit_price": 64900,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도 배 (벽체)",
+        "unit_price": 14100,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "도 배 (천정)",
+        "unit_price": 13500,
+        "unit": "/M2"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "방충망(스텐) 450*900",
+        "unit_price": 30700,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "콘센트",
+        "unit_price": 15200,
+        "unit": "/개"
+      },
+      {
+        "category": "거실 및 침실",
+        "item": "스위치",
+        "unit_price": 11600,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관문짝(교체)",
+        "unit_price": 506600,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관문짝(부분보수)",
+        "unit_price": 50700,
+        "unit": "원"
+      },
+      {
+        "category": "현관",
+        "item": "도어록(레버형)",
+        "unit_price": 29100,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "도어체크",
+        "unit_price": 75300,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "도어스토퍼",
+        "unit_price": 6100,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "현관센서등",
+        "unit_price": 43700,
+        "unit": "/개"
+      },
+      {
+        "category": "현관",
+        "item": "고무패킹",
+        "unit_price": 6100,
+        "unit": "/M"
+      },
+      {
+        "category": "현관",
+        "item": "타일 (바닥)",
+        "unit_price": 100300,
+        "unit": "/M2"
+      },
+      {
+        "category": "주방",
+        "item": "렌지후드(슬림형)",
+        "unit_price": 99200,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "렌지후드(디럭스)",
+        "unit_price": 152200,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "싱크 수전헤드",
+        "unit_price": 14500,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "싱크수전 교체",
+        "unit_price": 105400,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "배수홈통",
+        "unit_price": 26600,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "주방가구 경첩",
+        "unit_price": 10300,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "주방가구 손잡이",
+        "unit_price": 9300,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "인조대리석상판(W=600)",
+        "unit_price": 85000,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "상부장(W=600)",
+        "unit_price": 136800,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "하부장(W=600)",
+        "unit_price": 141600,
+        "unit": "/개"
+      },
+      {
+        "category": "주방",
+        "item": "식탁등",
+        "unit_price": 67400,
+        "unit": "/개"
+      },
+      {
+        "category": "발코니",
+        "item": "발코니등",
+        "unit_price": 43700,
+        "unit": "/개"
+      },
+      {
+        "category": "발코니",
+        "item": "타일 (바닥)",
+        "unit_price": 114800,
+        "unit": "/M2"
+      },
+      {
+        "category": "발코니",
+        "item": "도 장",
+        "unit_price": 7100,
+        "unit": "/M2"
+      },
+      {
+        "category": "소모성품목",
+        "item": "열쇠(복사)",
+        "unit_price": 5000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "출입카드",
+        "unit_price": 5000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "음식물카드",
+        "unit_price": 3300,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "욕조마개",
+        "unit_price": 2000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "변기커버",
+        "unit_price": 10000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "싱크 걸마개",
+        "unit_price": 5000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "배수트랩",
+        "unit_price": 3000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "싱크스텐망",
+        "unit_price": 10000,
+        "unit": "원"
+      },
+      {
+        "category": "소모성품목",
+        "item": "에어컨커버",
+        "unit_price": 2000,
+        "unit": "원"
+      }
+    ],
+    "산출예시_장판": {
+      "example": true,
+      "subject": "장판",
+      "scenario": "가로*세로가 3.5m X 3.3m 인 침실의 경우를 가정하여 산출한 예시임",
+      "formula_note": "룸카펫트(장판)의 경우는 시공 폭 단위로 산정하되, 장판 1폭의 크기는 (폭)1.8m, (길이) 변화치수(방 길이)를 기준으로 산정한 후 경과연수만큼 감가상각률을 공제 후 최종 부과비용 산정. 감가상각률 = 경과연수/수선주기 (5년 거주의 경우 감가상각률은 50%). 부과비용 = 보수비용 – 감가상각률 X 보수비용",
+      "rows": [
+        {
+          "part": "A쪽",
+          "calc": "1.8*3.5*1",
+          "area_m2": 6.3,
+          "unit_price": 15000,
+          "repair_cost": 94000,
+          "note": "감가상각율 적용"
+        },
+        {
+          "part": "B쪽",
+          "calc": "1.5*3.5*1",
+          "area_m2": 5.25,
+          "unit_price": 15000,
+          "repair_cost": 78000,
+          "note": "감가상각율 적용"
+        },
+        {
+          "part": "A+B쪽",
+          "calc": "1.8*3.5* + 1.5*3.5",
+          "area_m2": 11.55,
+          "unit_price": 15000,
+          "repair_cost": 172000,
+          "note": "감가상각율 적용"
+        }
+      ]
+    }
+  }
+}

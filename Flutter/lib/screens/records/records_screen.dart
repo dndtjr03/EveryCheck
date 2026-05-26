@@ -1,11 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../config/app_theme.dart';
-import '../../models/real_estate.dart';
-import '../../providers/contract_provider.dart';
-import '../contract/contract_detail_screen.dart';
-import '../contract/contract_form_screen.dart';
+import 'package:intl/intl.dart';
 
+import '../../config/app_theme.dart';
+import '../../local/analysis_repository.dart';
+import '../../models/analysis_local.dart';
+import '../analysis/analysis_chat_screen.dart';
+
+/// 기록 탭 — SQLite `analyses` 테이블 직접 사용 (서버 미연동 영구 저장).
+/// 서버 도입 시 `AnalysisRepository`만 remote-backed로 교체.
 class RecordsScreen extends StatefulWidget {
   const RecordsScreen({super.key});
 
@@ -14,18 +17,59 @@ class RecordsScreen extends StatefulWidget {
 }
 
 class _RecordsScreenState extends State<RecordsScreen> {
+  final _repo = AnalysisRepository.instance;
+  List<AnalysisSession> _sessions = [];
+  Map<int, int> _photoCounts = {};
+  bool _loading = true;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ContractProvider>().loadContracts();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final sessions = await _repo.listAnalyses();
+    final counts = <int, int>{};
+    for (final s in sessions) {
+      counts[s.id] = (await _repo.listPhotos(s.id)).length;
+    }
+    if (!mounted) return;
+    setState(() {
+      _sessions = sessions;
+      _photoCounts = counts;
+      _loading = false;
     });
+  }
+
+  Future<void> _confirmDelete(AnalysisSession s) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('기록 삭제'),
+        content: Text(
+            '"${s.contractAddr}"의 분석 기록을 삭제할까요?\n(채팅·사진·결과 모두 사라집니다.)'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('취소')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _repo.deleteAnalysis(s.id);
+    await _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ContractProvider>();
-
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -37,54 +81,63 @@ class _RecordsScreenState extends State<RecordsScreen> {
           preferredSize: Size.fromHeight(1),
           child: Divider(height: 1, color: AppColors.border),
         ),
+        actions: [
+          IconButton(
+            tooltip: '새로고침',
+            icon: const Icon(Icons.refresh, color: AppColors.n500),
+            onPressed: _load,
+          ),
+        ],
       ),
-      body: provider.loading && provider.contracts.isEmpty
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+      body: _loading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary))
           : RefreshIndicator(
               color: AppColors.primary,
-              onRefresh: () => provider.loadContracts(),
+              onRefresh: _load,
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                 children: [
-                  // 헤더
                   Row(
                     children: [
                       Text(
-                        '총 ${provider.contracts.length}건의 분석 기록',
+                        '총 ${_sessions.length}건의 분석 기록',
                         style: const TextStyle(
                             fontSize: 13, color: AppColors.n500),
                       ),
                       const Spacer(),
-                      GestureDetector(
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const ContractFormScreen()),
-                        ).then((_) => provider.loadContracts()),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(9999),
-                          ),
-                          child: const Text(
-                            '+ 새 기록',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white),
-                          ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryLight,
+                          borderRadius: BorderRadius.circular(9999),
+                        ),
+                        child: const Text(
+                          '🗂 로컬 저장',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryDark),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 14),
-                  if (provider.contracts.isEmpty)
-                    _EmptyState()
+                  if (_sessions.isEmpty)
+                    const _EmptyState()
                   else
-                    ...provider.contracts
-                        .map((c) => _RecordCard(contract: c)),
+                    ..._sessions.map((s) => _AnalysisCard(
+                          session: s,
+                          photoCount: _photoCounts[s.id] ?? 0,
+                          onTap: () => Navigator.of(context)
+                              .push(MaterialPageRoute(
+                                builder: (_) =>
+                                    AnalysisChatScreen(analysisId: s.id),
+                              ))
+                              .then((_) => _load()),
+                          onLongPress: () => _confirmDelete(s),
+                        )),
                 ],
               ),
             ),
@@ -93,27 +146,25 @@ class _RecordsScreenState extends State<RecordsScreen> {
 }
 
 class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.only(top: 60),
         child: Column(
-          children: [
-            const Text('📋', style: TextStyle(fontSize: 48)),
-            const SizedBox(height: 12),
-            const Text(
-              '아직 기록이 없어요',
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.n600),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              '분석 탭에서 첫 분석을 시작해보세요',
-              style: TextStyle(fontSize: 13, color: AppColors.n400),
-            ),
+          children: const [
+            Text('📋', style: TextStyle(fontSize: 48)),
+            SizedBox(height: 12),
+            Text('아직 기록이 없어요',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.n600)),
+            SizedBox(height: 6),
+            Text('분석 탭에서 첫 분석을 시작해보세요',
+                style: TextStyle(fontSize: 13, color: AppColors.n400)),
           ],
         ),
       ),
@@ -121,30 +172,48 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _RecordCard extends StatelessWidget {
-  final RealEstate contract;
-  const _RecordCard({required this.contract});
+class _AnalysisCard extends StatelessWidget {
+  final AnalysisSession session;
+  final int photoCount;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
-  String _fmt(DateTime d) =>
-      '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}';
+  const _AnalysisCard({
+    required this.session,
+    required this.photoCount,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final hasImages = contract.damageImages.isNotEmpty;
-    final statusLabel = hasImages ? '사진 등록됨' : '사진 없음';
-    final statusBg    = hasImages ? AppColors.secondaryLight : AppColors.n100;
-    final statusFg    = hasImages ? const Color(0xFF2A9060) : AppColors.n500;
+    final completed = session.status == AnalysisStatus.completed;
+    final dateFmt = DateFormat('yyyy.MM.dd HH:mm');
+    final won = NumberFormat.currency(
+        locale: 'ko_KR', symbol: '₩', decimalDigits: 0);
+
+    final statusLabel = switch (session.status) {
+      AnalysisStatus.pending => '대기 중',
+      AnalysisStatus.inProgress => '분석 중',
+      AnalysisStatus.completed => '완료',
+    };
+    final statusBg = switch (session.status) {
+      AnalysisStatus.pending => AppColors.n100,
+      AnalysisStatus.inProgress => AppColors.primaryLight,
+      AnalysisStatus.completed => AppColors.secondaryLight,
+    };
+    final statusFg = switch (session.status) {
+      AnalysisStatus.pending => AppColors.n500,
+      AnalysisStatus.inProgress => AppColors.primaryDark,
+      AnalysisStatus.completed => const Color(0xFF2A9060),
+    };
 
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ContractDetailScreen(contractId: contract.id),
-        ),
-      ),
+      onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(kRadius),
@@ -168,8 +237,7 @@ class _RecordCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Center(
-                    child: Text('🏠', style: TextStyle(fontSize: 22)),
-                  ),
+                      child: Text('🏠', style: TextStyle(fontSize: 22))),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -177,7 +245,7 @@ class _RecordCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        contract.address,
+                        session.contractAddr,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -188,7 +256,8 @@ class _RecordCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        _fmt(contract.contractStartDate),
+                        dateFmt
+                            .format(session.completedAt ?? session.startedAt),
                         style: const TextStyle(
                             fontSize: 12, color: AppColors.n500),
                       ),
@@ -202,14 +271,11 @@ class _RecordCard extends StatelessWidget {
                     color: statusBg,
                     borderRadius: BorderRadius.circular(9999),
                   ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: statusFg,
-                    ),
-                  ),
+                  child: Text(statusLabel,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: statusFg)),
                 ),
               ],
             ),
@@ -217,16 +283,18 @@ class _RecordCard extends StatelessWidget {
             Row(
               children: [
                 _Chip(
-                  label: '📷 사진 ${contract.damageImages.length}장',
+                  label: '📷 사진 $photoCount장',
                   bg: AppColors.n100,
                   fg: AppColors.n500,
                 ),
-                const SizedBox(width: 8),
-                _Chip(
-                  label: '입주일 ${_fmt(contract.contractStartDate)}',
-                  bg: AppColors.primaryLight,
-                  fg: AppColors.primaryDark,
-                ),
+                if (completed && session.estimatedCost != null) ...[
+                  const SizedBox(width: 8),
+                  _Chip(
+                    label: '💰 ${won.format(session.estimatedCost)}',
+                    bg: AppColors.accentLight,
+                    fg: const Color(0xFFB85520),
+                  ),
+                ],
               ],
             ),
           ],
@@ -253,4 +321,11 @@ class _Chip extends StatelessWidget {
       child: Text(label, style: TextStyle(fontSize: 12, color: fg)),
     );
   }
+}
+
+// ignore: unused_element
+File? _safeFile(String? path) {
+  if (path == null) return null;
+  final f = File(path);
+  return f.existsSync() ? f : null;
 }

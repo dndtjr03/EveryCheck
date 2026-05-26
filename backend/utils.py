@@ -17,6 +17,17 @@ import magic
 from fastapi import UploadFile
 
 
+def normalize_aws_credentials() -> None:
+    """boto3 표준 환경 변수명으로 매핑 (.env 에 AWS_ACCESS_KEY 등 별칭 지원)."""
+
+    if not os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_ACCESS_KEY"):
+        os.environ["AWS_ACCESS_KEY_ID"] = os.environ["AWS_ACCESS_KEY"]
+    if not os.getenv("AWS_SECRET_ACCESS_KEY") and os.getenv("AWS_SECRET_KEY"):
+        os.environ["AWS_SECRET_ACCESS_KEY"] = os.environ["AWS_SECRET_KEY"]
+
+
+normalize_aws_credentials()
+
 # 전역 S3 클라이언트 (필요 시 리전/엔드포인트를 환경 변수로 조정)
 _s3_client = boto3.client("s3", region_name=os.getenv("AWS_REGION", "ap-northeast-2"))
 
@@ -164,6 +175,63 @@ async def calculate_sha256_from_bytes(data: bytes) -> str:
     return compute_image_hash_sha256(data)
 
 
+def build_s3_public_url(bucket_name: str, key: str, region: Optional[str] = None) -> str:
+    """가상 호스팅 스타일 S3 퍼블릭 URL을 생성한다."""
+
+    reg = region or os.getenv("AWS_REGION", "ap-northeast-2")
+    return f"https://{bucket_name}.s3.{reg}.amazonaws.com/{key}"
+
+
+def put_bytes_to_s3(
+    *,
+    bucket_name: str,
+    key: str,
+    body: bytes,
+    content_type: str,
+) -> str:
+    """바이트를 S3에 업로드하고 퍼블릭 URL을 반환한다."""
+
+    if not bucket_name:
+        raise ValueError("S3 버킷 이름이 설정되지 않았습니다. S3_BUCKET_NAME 환경 변수를 확인하세요.")
+
+    _s3_client.put_object(
+        Bucket=bucket_name,
+        Key=key,
+        Body=body,
+        ContentType=content_type,
+    )
+    return build_s3_public_url(bucket_name, key)
+
+
+def delete_object_from_s3(*, bucket_name: str, key: str) -> None:
+    """S3 객체를 삭제한다 (업로드 롤백용)."""
+
+    _s3_client.delete_object(Bucket=bucket_name, Key=key)
+
+
+def generate_presigned_get_url(
+    *,
+    bucket_name: str,
+    key: str,
+    expires_in: int = 300,
+) -> str:
+    """비공개 S3 객체에 대한 GET Presigned URL을 생성한다."""
+
+    if not bucket_name:
+        raise ValueError("S3 버킷 이름이 설정되지 않았습니다.")
+    if not key:
+        raise ValueError("S3 객체 키가 비어 있습니다.")
+
+    url = _s3_client.generate_presigned_url(
+        ClientMethod="get_object",
+        Params={"Bucket": bucket_name, "Key": key},
+        ExpiresIn=expires_in,
+    )
+    if not url:
+        raise RuntimeError("Presigned URL 생성에 실패했습니다.")
+    return url
+
+
 async def upload_image_to_s3(
     upload_file: UploadFile,
     bucket_name: str,
@@ -178,7 +246,6 @@ async def upload_image_to_s3(
     """
 
     if not bucket_name:
-        # 버킷 이름이 설정되지 않은 경우는 애플리케이션 설정 오류에 가깝다.
         raise ValueError("S3 버킷 이름이 설정되지 않았습니다. S3_BUCKET_NAME 환경 변수를 확인하세요.")
 
     original_name = upload_file.filename or "upload"
@@ -188,22 +255,16 @@ async def upload_image_to_s3(
     file_id = str(uuid.uuid4())
     key = f"{key_prefix}/{file_id}{ext}"
 
-    # 파일 내용을 메모리로 읽어 S3에 업로드한다. (호출부에서 body를 넘겨주면 재사용)
     if body is None:
         body = await upload_file.read()
         await upload_file.seek(0)
 
-    _s3_client.put_object(
-        Bucket=bucket_name,
-        Key=key,
-        Body=body,
-        ContentType=content_type or upload_file.content_type or "application/octet-stream",
+    return put_bytes_to_s3(
+        bucket_name=bucket_name,
+        key=key,
+        body=body,
+        content_type=content_type or upload_file.content_type or "application/octet-stream",
     )
-
-    # 가장 단순한 형태의 퍼블릭 URL (버킷이 퍼블릭 접근 가능하다고 가정)
-    region = os.getenv("AWS_REGION", "ap-northeast-2")
-    url = f"https://{bucket_name}.s3.{region}.amazonaws.com/{key}"
-    return url
 
 
 def parse_s3_public_bucket_key(url: str) -> Tuple[str, str]:

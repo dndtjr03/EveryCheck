@@ -94,6 +94,124 @@ class RealEstateRead(RealEstateBase):
 
 
 # -----------------------------
+# Checklist (체크리스트)
+# -----------------------------
+
+
+class ChecklistCreate(BaseModel):
+    """체크리스트 생성 요청 스키마."""
+
+    title: str
+
+
+class ChecklistRead(BaseModel):
+    """API 응답용 체크리스트 스키마."""
+
+    id: int
+    user_id: int
+    title: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# -----------------------------
+# Photo (체크리스트·사용자 연동 사진)
+# -----------------------------
+
+
+class PhotoRead(BaseModel):
+    """API 응답용 사진 메타데이터 스키마."""
+
+    id: int
+    user_id: int
+    checklist_id: Optional[int] = None
+    image_url: str
+    original_name: str
+    description: Optional[str] = None
+    photo_type: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+_PRESIGNED_URL_EXAMPLE = (
+    "https://your-bucket.s3.ap-northeast-2.amazonaws.com/checklist-photos/abc.jpg"
+    "?AWSAccessKeyId=AKIA...&Signature=...&Expires=1710000000"
+)
+
+
+class PhotoDisplayItem(BaseModel):
+    """Presigned URL 등 클라이언트 조회용 사진 응답."""
+
+    photo_id: int
+    display_url: str
+    expires_in: int = 300
+    original_name: str
+    photo_type: str
+    checklist_id: Optional[int] = None
+    created_at: datetime
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "photo_id": 1,
+                    "display_url": _PRESIGNED_URL_EXAMPLE,
+                    "expires_in": 300,
+                    "original_name": "room.jpg",
+                    "photo_type": "INITIAL",
+                    "checklist_id": 10,
+                    "created_at": "2026-05-15T12:00:00Z",
+                }
+            ]
+        }
+    )
+
+
+class PhotoDisplayListResponse(BaseModel):
+    """소유자 인증 후 목록 조회 응답."""
+
+    count: int
+    photos: List[PhotoDisplayItem]
+
+
+class PhotoUploadItem(BaseModel):
+    """다중 업로드 응답용 개별 사진 요약 (Presigned 조회 URL 포함)."""
+
+    photo_id: int
+    display_url: str
+    expires_in: int = 300
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "photo_id": 1,
+                    "display_url": _PRESIGNED_URL_EXAMPLE,
+                    "expires_in": 300,
+                }
+            ]
+        }
+    )
+
+
+class PhotoUploadBatchResponse(BaseModel):
+    """다중 사진 업로드 응답."""
+
+    count: int
+    photos: List[PhotoUploadItem]
+
+
+class PhotoCompareResponse(BaseModel):
+    """체크리스트별 INITIAL / DAMAGED 사진을 한 번에 내려줄 때 사용하는 스키마."""
+
+    checklist_id: int
+    initial: List[PhotoDisplayItem]
+    damaged: List[PhotoDisplayItem]
+
+
+# -----------------------------
 # DamageImage (손상 이미지)
 # -----------------------------
 

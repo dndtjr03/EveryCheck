@@ -39,8 +39,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   image_picker: ^1.1.2
   shimmer: ^3.0.0
-  # 로컬 DB (분석 기록, 채팅 메시지, 사진 메타)
-  sqflite: ^2.3.3
+  # 임시 파일 경로 처리 (S3 업로드 직전 buffer)
   path: ^1.9.0
   path_provider: ^2.1.4
   # Gemini 백엔드 프록시 호출용 — GeminiChatTurn 타입 재사용 위해 패키지 유지

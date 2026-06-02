@@ -2,8 +2,7 @@
 
 - JWT 기반 인증/인가
 - 임대차 계약(RealEstate) CRUD 골격
-- 손상 이미지(DamageImage) 업로드 (S3 + SHA-256 해시 저장)
-- 수리비/감가상각(RepairEstimate) 계산 및 저장
+- 분석 세션(Analysis) / 분석 사진(AnalysisPhoto) / 채팅(AnalysisMessage)
 """
 
 # auth 등 프로젝트 모듈이 import 될 때 os.environ 에 JWT·DB 값이 있어야 하므로,
@@ -29,7 +28,6 @@ from fastapi import (
     Depends,
     FastAPI,
     File,
-    Form,
     HTTPException,
     Request,
     Response,
@@ -67,11 +65,10 @@ from auth import (
 from database import Base, engine, get_db
 from routers import photo
 from routers.checklist import router as checklist_router
+from routers.analysis import router as analysis_router
 from security_audit import init_security_audit_logger, log_sensitive_endpoint_access
-from models import DamageTypeEnum, DamageImage, RealEstate, RepairEstimate, User
+from models import RealEstate, User
 from utils import (
-    calculate_depreciation_rate,
-    calculate_tenant_cost,
     compute_image_hash_sha256,
     upload_image_to_s3,
     validate_and_read_image_file,
@@ -117,6 +114,12 @@ app.include_router(
     photo.router,
     prefix="/photos",
     tags=["photos"],
+)
+
+app.include_router(
+    analysis_router,
+    prefix="/analyses",
+    tags=["analyses"],
 )
 
 # Flutter 앱이 Gemini 키를 들고 다니지 않게 백엔드가 대신 호출하는 프록시 라우터
@@ -514,17 +517,17 @@ def list_real_estates(
 
 @app.get(
     "/real-estates/{real_estate_id}",
-    response_model=schemas.RealEstateDetail,
-    summary="임대차 계약 상세 (이미지/견적 포함)",
-    description="임대차 계약 1건의 상세 정보와, 연관된 손상 이미지/수리비 산출 결과 목록을 함께 반환합니다.",
+    response_model=schemas.RealEstateRead,
+    summary="임대차 계약 상세",
+    description="임대차 계약 1건의 상세 정보를 반환합니다.",
 )
 def get_real_estate_detail(
     request: Request,
     real_estate_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
-) -> schemas.RealEstateDetail:
-    """임대차 계약 정보와 관련 이미지/견적을 함께 조회한다."""
+) -> RealEstate:
+    """임대차 계약 정보를 조회한다."""
 
     real_estate = (
         db.query(RealEstate)
@@ -537,271 +540,12 @@ def get_real_estate_detail(
     if not real_estate:
         raise HTTPException(status_code=404, detail="임대차 계약을 찾을 수 없습니다.")
 
-    # Pydantic 스키마로 변환 (관계 포함)
-    return schemas.RealEstateDetail(
-        id=real_estate.id,
-        owner_id=real_estate.owner_id,
-        address=real_estate.address,
-        contract_start_date=real_estate.contract_start_date,
-        contract_end_date=real_estate.contract_end_date,
-        memo=real_estate.memo,
-        created_at=real_estate.created_at,
-        damage_images=real_estate.damage_images,
-        repair_estimates=real_estate.repair_estimates,
-    )
+    return real_estate
 
 
-# -----------------------------
-# 손상 이미지(DamageImage) 업로드 엔드포인트
-# -----------------------------
-
-
-@app.post(
-    "/real-estates/{real_estate_id}/images",
-    response_model=schemas.DamageImageRead,
-    summary="손상 이미지 업로드",
-    description="손상 이미지를 업로드합니다. 10MB 제한 및 확장자/실제 MIME 검증을 수행하고, SHA-256 해시를 저장한 뒤 S3에 업로드합니다.",
-)
-async def upload_damage_image(
-    request: Request,
-    real_estate_id: int,
-    file: UploadFile = File(..., description="손상 이미지 파일"),
-    damage_type: DamageTypeEnum = Form(..., description="손상 종류 (wallpaper/floor/other)"),
-    ai_result: Optional[str] = Form(
-        None,
-        description="AI 분석 결과 (선택, 추후 AI 파이프라인과 연동 가능)",
-    ),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> DamageImage:
-    """손상 이미지를 업로드하고 S3 URL, SHA-256 해시, AI 결과를 DB에 저장한다."""
-
-    # 요청한 임대차 계약이 현재 사용자 소유인지 검증
-    real_estate = (
-        db.query(RealEstate)
-        .filter(
-            RealEstate.id == real_estate_id,
-            RealEstate.owner_id == current_user.id,
-        )
-        .first()
-    )
-    if not real_estate:
-        raise HTTPException(status_code=404, detail="임대차 계약을 찾을 수 없습니다.")
-
-    # 1) 업로드 파일 보안 검증(확장자/MIME/용량) 및 바이트 읽기
-    try:
-        file_bytes, detected_mime = await validate_and_read_image_file(file)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    # 2) 무결성용 SHA-256(image_hash) — S3 업로드 전에 바이트 기준으로 먼저 계산
-    file_hash = compute_image_hash_sha256(file_bytes)
-
-    # 3) S3 업로드
-    bucket_name = os.getenv("S3_BUCKET_NAME", "")
-    try:
-        s3_url = await upload_image_to_s3(
-            file,
-            bucket_name=bucket_name,
-            body=file_bytes,
-            content_type=detected_mime,
-        )
-    except ValueError as e:
-        # 설정 오류 등으로 인한 예외는 서버 오류로 응답
-        raise HTTPException(status_code=500, detail=str(e))
-
-    # 3) DB에 메타데이터 저장
-    damage_image = DamageImage(
-        real_estate_id=real_estate.id,
-        s3_url=s3_url,
-        damage_type=damage_type,
-        ai_result=ai_result,
-        file_hash=file_hash,
-    )
-
-    db.add(damage_image)
-    db.commit()
-    db.refresh(damage_image)
-
-    return damage_image
-
-
-# -----------------------------
-# AI 비동기 분석 (/analyze)
-# -----------------------------
-
-
-@app.post(
-    "/analyze",
-    response_model=schemas.AnalyzeJobResponse,
-    summary="손상 이미지 AI 비동기 분석",
-    description=(
-        "손상 이미지를 업로드하면 즉시 분석 작업을 큐에 넣고 task_id와 repair_estimate_id를 반환합니다. "
-        "실제 Gemini 분석은 Celery 워커에서 수행되며, 완료 시 repair_estimates 행이 갱신됩니다."
-    ),
-)
-@limiter.limit("5/minute")
-async def analyze_damage_image(
-    request: Request,
-    real_estate_id: int = Form(..., description="임대차 계약 ID"),
-    file: UploadFile = File(..., description="손상 이미지 파일"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> schemas.AnalyzeJobResponse:
-    """이미지를 S3에 저장하고 RepairEstimate(분석 중)를 만든 뒤 백그라운드 분석 태스크를 실행한다."""
-
-    real_estate = (
-        db.query(RealEstate)
-        .filter(
-            RealEstate.id == real_estate_id,
-            RealEstate.owner_id == current_user.id,
-        )
-        .first()
-    )
-    if not real_estate:
-        raise HTTPException(status_code=404, detail="임대차 계약을 찾을 수 없습니다.")
-
-    try:
-        file_bytes, detected_mime = await validate_and_read_image_file(file)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    image_hash = compute_image_hash_sha256(file_bytes)
-
-    bucket_name = os.getenv("S3_BUCKET_NAME", "")
-    try:
-        s3_url = await upload_image_to_s3(
-            file,
-            bucket_name=bucket_name,
-            body=file_bytes,
-            content_type=detected_mime,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    damage_image = DamageImage(
-        real_estate_id=real_estate.id,
-        s3_url=s3_url,
-        damage_type=DamageTypeEnum.other,
-        ai_result=None,
-        file_hash=image_hash,
-    )
-    db.add(damage_image)
-    db.flush()
-
-    depreciation_rate = calculate_depreciation_rate(
-        elapsed_years=0.0,
-        useful_life_years=10.0,
-    )
-    tenant_cost = calculate_tenant_cost(
-        total_repair_cost=0.0,
-        elapsed_years=0.0,
-        useful_life_years=10.0,
-    )
-
-    estimate = RepairEstimate(
-        real_estate_id=real_estate.id,
-        damage_image_id=damage_image.id,
-        total_repair_cost=0.0,
-        useful_life_years=10.0,
-        elapsed_years=0.0,
-        tenant_cost=tenant_cost,
-        depreciation_rate=depreciation_rate,
-        image_hash=image_hash,
-        analysis_status="analyzing",
-    )
-    db.add(estimate)
-    db.commit()  # commit 먼저 → Celery 워커가 DB에서 행을 확실히 찾을 수 있음
-
-    from worker import analyze_image_task
-
-    async_result = analyze_image_task.delay(estimate.id)
-    estimate.celery_task_id = async_result.id
-
-    db.commit()
-
-    return schemas.AnalyzeJobResponse(
-        status="analyzing",
-        task_id=str(async_result.id),
-        repair_estimate_id=estimate.id,
-    )
-
-
-# -----------------------------
-# 수리비/감가상각(RepairEstimate) 엔드포인트
-# -----------------------------
-
-
-@app.post(
-    "/real-estates/{real_estate_id}/repair-estimates",
-    response_model=schemas.RepairEstimateRead,
-    summary="수리비 및 감가상각 계산/저장",
-    description="총 수리비, 경과연수, 내용연수(기본 10년)를 받아 국토부 가이드라인 공식으로 임차인 부담비용과 감가상각 비율을 계산해 저장합니다.",
-)
-def create_repair_estimate(
-    request: Request,
-    real_estate_id: int,
-    estimate_in: schemas.RepairEstimateCreate,
-    damage_image_id: Optional[int] = Body(
-        None,
-        description="관련 손상 이미지 ID (선택)",
-    ),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-) -> RepairEstimate:
-    """국토부 가이드라인(벽지/장판 내구연수 10년 기준)에 따라 임차인 부담 비용을 계산하고 결과를 저장한다."""
-
-    real_estate = (
-        db.query(RealEstate)
-        .filter(
-            RealEstate.id == real_estate_id,
-            RealEstate.owner_id == current_user.id,
-        )
-        .first()
-    )
-    if not real_estate:
-        raise HTTPException(status_code=404, detail="임대차 계약을 찾을 수 없습니다.")
-
-    # 선택적으로 damage_image_id가 주어진 경우, 해당 이미지가 이 임대차 계약에 속하는지 검증
-    damage_image: Optional[DamageImage] = None
-    if damage_image_id is not None:
-        damage_image = (
-            db.query(DamageImage)
-            .filter(
-                DamageImage.id == damage_image_id,
-                DamageImage.real_estate_id == real_estate.id,
-            )
-            .first()
-        )
-        if not damage_image:
-            raise HTTPException(status_code=400, detail="해당 임대차 계약에 속하지 않는 이미지입니다.")
-
-    # 감가상각 비율 및 임차인 부담 비용 계산
-    depreciation_rate = calculate_depreciation_rate(
-        elapsed_years=estimate_in.elapsed_years,
-        useful_life_years=estimate_in.useful_life_years,
-    )
-    tenant_cost = calculate_tenant_cost(
-        total_repair_cost=estimate_in.total_repair_cost,
-        elapsed_years=estimate_in.elapsed_years,
-        useful_life_years=estimate_in.useful_life_years,
-    )
-
-    estimate = RepairEstimate(
-        real_estate_id=real_estate.id,
-        damage_image_id=damage_image.id if damage_image else None,
-        total_repair_cost=estimate_in.total_repair_cost,
-        useful_life_years=estimate_in.useful_life_years,
-        elapsed_years=estimate_in.elapsed_years,
-        tenant_cost=tenant_cost,
-        depreciation_rate=depreciation_rate,
-    )
-
-    db.add(estimate)
-    db.commit()
-    db.refresh(estimate)
-
-    return estimate
+# NOTE: 구 DamageImage/RepairEstimate 기반 엔드포인트는 Analysis* 모델 통합으로 폐기됨
+# (/real-estates/{id}/images, /analyze, /real-estates/{id}/repair-estimates)
+# 사진 업로드는 /photos/upload-single, 분석 세션 CRUD는 /analyses/* 사용.
 
 
 @app.post(

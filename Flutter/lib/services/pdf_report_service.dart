@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:developer' as dev;
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -134,27 +134,24 @@ class PdfReportService {
         } catch (_) {}
       }
 
-      // 사진 로딩: 경로/존재 여부/디코딩 단계마다 분리해서 어디서 실패하는지
-      // 디버그 콘솔에 남긴다. 사용자가 "PDF에 사진이 안 들어간다"고 할 때 진단용.
+      // 사진 로딩: S3 public URL에서 직접 다운로드.
+      // 디버그 콘솔에 단계별 상태를 남겨 "PDF에 사진이 안 들어간다" 진단을 돕는다.
       pw.MemoryImage? image;
       String? loadError;
       try {
-        final imgFile = File(ph.filePath);
-        if (!imgFile.existsSync()) {
-          loadError = '파일 없음: ${ph.filePath}';
-          dev.log('PDF photo missing: ${ph.filePath}', name: 'pdf');
+        final resp = await http.get(Uri.parse(ph.s3Url));
+        if (resp.statusCode != 200) {
+          loadError = '다운로드 실패 (${resp.statusCode}): ${ph.s3Url}';
+          dev.log(loadError, name: 'pdf');
+        } else if (resp.bodyBytes.isEmpty) {
+          loadError = '응답이 비어 있음: ${ph.s3Url}';
+          dev.log(loadError, name: 'pdf');
         } else {
-          final imgBytes = imgFile.readAsBytesSync();
-          if (imgBytes.isEmpty) {
-            loadError = '파일이 비어 있음';
-            dev.log('PDF photo empty: ${ph.filePath}', name: 'pdf');
-          } else {
-            image = pw.MemoryImage(imgBytes);
-            dev.log(
-              'PDF photo loaded: ${ph.filePath} (${imgBytes.length} bytes)',
-              name: 'pdf',
-            );
-          }
+          image = pw.MemoryImage(resp.bodyBytes);
+          dev.log(
+            'PDF photo loaded: ${ph.s3Url} (${resp.bodyBytes.length} bytes)',
+            name: 'pdf',
+          );
         }
       } catch (e, st) {
         loadError = '로딩 오류: $e';

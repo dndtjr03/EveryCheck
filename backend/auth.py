@@ -1,15 +1,12 @@
 """JWT·비밀번호 인증 설정 및 의존성.
 
-비밀키는 반드시 환경 변수(JWT_SECRET_KEY 또는 SECRET_KEY)로만 주입한다.
-로컬 개발 시 프로젝트 루트의 .env 파일을 `python-dotenv`로 불러온다.
+비밀키 등 모든 환경값은 `config.Settings` (pydantic-settings) 를 통해 주입된다.
+필수값(JWT_SECRET_KEY)이 누락되면 `Settings` 초기화 단계에서 ValidationError가 발생한다.
 """
 
-import os
-from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
-from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -17,25 +14,17 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 import schemas
+from config import get_settings
 from database import get_db
 from models import User
 
-load_dotenv(Path(__file__).resolve().parent / ".env")
 
+_settings = get_settings()
 
-def _require_jwt_secret() -> str:
-    secret = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
-    if not secret or not secret.strip():
-        raise RuntimeError(
-            "JWT_SECRET_KEY 또는 SECRET_KEY를 .env(또는 환경 변수)에 설정해야 합니다."
-        )
-    return secret.strip()
-
-
-SECRET_KEY = _require_jwt_secret()
-ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "14"))
+SECRET_KEY: str = _settings.jwt_secret_key.get_secret_value()
+ALGORITHM: str = _settings.jwt_algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES: int = _settings.access_token_expire_minutes
+REFRESH_TOKEN_EXPIRE_DAYS: int = _settings.refresh_token_expire_days
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

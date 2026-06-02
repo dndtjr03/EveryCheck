@@ -5,8 +5,6 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
-from models import DamageTypeEnum
-
 
 # -----------------------------
 # 공통 스키마
@@ -212,86 +210,104 @@ class PhotoCompareResponse(BaseModel):
 
 
 # -----------------------------
-# DamageImage (손상 이미지)
+# Analysis (분석 세션 — Flutter SQLite 이식)
 # -----------------------------
 
 
-class DamageImageBase(BaseModel):
-    """손상 이미지 공통 필드 스키마."""
-
-    s3_url: str
-    damage_type: DamageTypeEnum
-    ai_result: Optional[str] = None
-    file_hash: str
+AnalysisStatusLiteral = Literal["pending", "in_progress", "completed"]
+PhotoGroupLiteral = Literal["move_in", "move_out"]
+ChatRoleLiteral = Literal["user", "ai", "system"]
+PhotoAnalysisStatusLiteral = Literal["pending", "analyzing", "completed", "failed"]
 
 
-class DamageImageRead(DamageImageBase):
-    """API 응답용 손상 이미지 스키마."""
+class AnalysisCreate(BaseModel):
+    contract_id: int
+    contract_addr: str
 
+
+class AnalysisUpdate(BaseModel):
+    status: Optional[AnalysisStatusLiteral] = None
+    summary: Optional[str] = None
+    estimated_cost: Optional[int] = None
+
+
+class AnalysisRead(BaseModel):
     id: int
-    real_estate_id: int
-    uploaded_at: datetime
+    owner_id: int
+    contract_id: int
+    contract_addr: str
+    status: AnalysisStatusLiteral
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    summary: Optional[str] = None
+    estimated_cost: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
-# -----------------------------
-# RepairEstimate (수리비/감가상각)
-# -----------------------------
+class AnalysisPhotoCreate(BaseModel):
+    s3_url: str
+    group_type: PhotoGroupLiteral
+    order_index: int = 0
+    file_hash: Optional[str] = None
 
 
-class RepairEstimateBase(BaseModel):
-    """수리비/감가상각 결과 공통 필드 스키마."""
-
-    total_repair_cost: float
-    useful_life_years: float
-    elapsed_years: float
-    tenant_cost: float
-    depreciation_rate: float
-
-
-class RepairEstimateCreate(BaseModel):
-    """수리비 및 경과 연수 정보를 입력받는 스키마."""
-
-    total_repair_cost: float
-    elapsed_years: float
-    useful_life_years: float = 10.0  # 기본값: 10년 (벽지/장판 내구연수)
-
-
-class RepairEstimateRead(RepairEstimateBase):
-    """API 응답용 수리비/감가상각 결과 스키마."""
-
-    id: int
-    real_estate_id: int
-    damage_image_id: Optional[int] = None
-    part: Optional[str] = None
+class AnalysisPhotoUpdate(BaseModel):
+    analyzed: Optional[bool] = None
+    ai_result: Optional[str] = None
+    s3_url: Optional[str] = None
+    # 구 RepairEstimate 흡수 필드 — PATCH로 직접 갱신 가능
+    file_hash: Optional[str] = None
     damage_type: Optional[str] = None
-    estimated_cost: Optional[float] = None
+    part: Optional[str] = None
     ai_confidence: Optional[float] = None
-    image_hash: Optional[str] = None
+    analysis_status: Optional[PhotoAnalysisStatusLiteral] = None
+    celery_task_id: Optional[str] = None
+    total_repair_cost: Optional[float] = None
+    tenant_cost: Optional[float] = None
+    depreciation_rate: Optional[float] = None
+    useful_life_years: Optional[float] = None
+    elapsed_years: Optional[float] = None
+
+
+class AnalysisPhotoRead(BaseModel):
+    id: int
+    analysis_id: int
+    s3_url: str
+    group_type: PhotoGroupLiteral
+    order_index: int
+    analyzed: bool
+    ai_result: Optional[str] = None
+    created_at: datetime
+    # 구 DamageImage/RepairEstimate에서 흡수한 필드
+    file_hash: Optional[str] = None
+    damage_type: Optional[str] = None
+    part: Optional[str] = None
+    ai_confidence: Optional[float] = None
     analysis_status: Optional[str] = None
     celery_task_id: Optional[str] = None
+    total_repair_cost: Optional[float] = None
+    tenant_cost: Optional[float] = None
+    depreciation_rate: Optional[float] = None
+    useful_life_years: Optional[float] = None
+    elapsed_years: Optional[float] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AnalysisMessageCreate(BaseModel):
+    role: ChatRoleLiteral
+    content: str
+    photo_id: Optional[int] = None
+
+
+class AnalysisMessageRead(BaseModel):
+    id: int
+    analysis_id: int
+    role: ChatRoleLiteral
+    content: str
+    photo_id: Optional[int] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class AnalyzeJobResponse(BaseModel):
-    """비동기 AI 분석 요청 접수 응답."""
-
-    status: Literal["analyzing"] = "analyzing"
-    task_id: str
-    repair_estimate_id: int
-
-
-# -----------------------------
-# 복합 응답 예시 (선택적 확장용)
-# -----------------------------
-
-
-class RealEstateDetail(RealEstateRead):
-    """임대차 계약과 관련된 이미지/견적을 함께 내려줄 때 사용할 수 있는 상세 스키마."""
-
-    damage_images: List[DamageImageRead] = []
-    repair_estimates: List[RepairEstimateRead] = []
 

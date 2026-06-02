@@ -48,7 +48,14 @@ def main() -> int:
 
     # DATABASE_URL 이 os.environ 에 반영된 뒤 database / models 를 불러야 한다.
     from database import Base, engine
-    from models import Checklist, Photo, User
+    from models import (
+        Analysis,
+        AnalysisMessage,
+        AnalysisPhoto,
+        Checklist,
+        Photo,
+        User,
+    )
     from sqlalchemy import inspect
 
     url = os.environ["DATABASE_URL"]
@@ -58,14 +65,21 @@ def main() -> int:
     Base.metadata.create_all(engine)
 
     insp = inspect(engine)
-    for name in ("users", "checklists", "photos"):
+    for name in (
+        "users",
+        "checklists",
+        "photos",
+        "analyses",
+        "analysis_photos",
+        "analysis_messages",
+    ):
         if insp.has_table(name):
             print(f"확인: 테이블 '{name}' 존재")
         else:
             print(f"경고: 테이블 '{name}' 가 보이지 않습니다.", file=sys.stderr)
             return 1
 
-    print("완료: users, checklists, photos 테이블 생성(또는 이미 존재) 처리됨.")
+    print("완료: users, checklists, photos, analyses, analysis_photos, analysis_messages 테이블 생성(또는 이미 존재) 처리됨.")
     return 0
 
 

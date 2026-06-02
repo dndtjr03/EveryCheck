@@ -1,7 +1,6 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../../config/app_theme.dart';
 import '../../local/analysis_repository.dart';
@@ -108,6 +107,17 @@ class _AnalysisChatScreenState extends State<AnalysisChatScreen> {
     _scrollToBottom();
   }
 
+  /// S3 public URL에서 사진 바이트를 직접 다운로드.
+  /// 같은 사진을 여러 번 사용하는 호출자는 결과를 캐시해 사용해야 함.
+  Future<Uint8List> _fetchPhotoBytes(DamagePhoto photo) async {
+    final resp = await http.get(Uri.parse(photo.s3Url));
+    if (resp.statusCode != 200) {
+      throw StateError(
+          '사진 다운로드 실패 (${resp.statusCode}): ${photo.s3Url}');
+    }
+    return resp.bodyBytes;
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
@@ -152,12 +162,10 @@ class _AnalysisChatScreenState extends State<AnalysisChatScreen> {
               '(입주 사진이 없어 비교 없이 단독 분석합니다.)',
     );
 
-    // 입주 사진들 bytes를 한 번만 미리 읽어 메모리에 보관 (퇴거 사진마다 재전송).
+    // 입주 사진들 bytes를 한 번만 미리 다운로드해 메모리에 보관 (퇴거 사진마다 재전송).
     List<Uint8List> moveInBytes = const [];
     if (useBaseline) {
-      moveInBytes = await Future.wait(
-        moveIns.map((p) => File(p.filePath).readAsBytes()),
-      );
+      moveInBytes = await Future.wait(moveIns.map(_fetchPhotoBytes));
     }
 
     final results = <Map<String, dynamic>>[];
@@ -166,7 +174,7 @@ class _AnalysisChatScreenState extends State<AnalysisChatScreen> {
     for (int i = 0; i < targets.length; i++) {
       final photo = targets[i];
       try {
-        final bytes = await File(photo.filePath).readAsBytes();
+        final bytes = await _fetchPhotoBytes(photo);
         final Map<String, dynamic> raw;
         if (useBaseline) {
           raw = await _ai.analyzePhotoWithBaseline(
@@ -176,7 +184,7 @@ class _AnalysisChatScreenState extends State<AnalysisChatScreen> {
         } else {
           raw = await _ai.analyzePhoto(bytes);
         }
-        await _repo.markPhotoAnalyzed(photo.id, jsonEncode(raw));
+        await _repo.markPhotoAnalyzed(widget.analysisId, photo.id, raw);
         results.add(raw);
 
         final cost = (raw['cost'] as num?)?.toInt() ?? 0;

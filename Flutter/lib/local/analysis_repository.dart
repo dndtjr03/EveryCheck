@@ -1,12 +1,17 @@
+import 'dart:convert';
+
 import '../models/analysis_local.dart';
-import 'local_db.dart';
+import '../services/api_service.dart';
 
 /// 분석 세션·사진·메시지에 대한 데이터 액세스.
 ///
-/// 서버 연동 시 이 클래스를 인터페이스로 추출하고 remote 구현 추가 예정.
+/// 이전: 로컬 SQLite 기반. 현재: FastAPI(`/analyses/*`) 호출 기반.
+/// 호출 시그니처는 가급적 기존과 호환되도록 유지.
 class AnalysisRepository {
   AnalysisRepository._();
   static final AnalysisRepository instance = AnalysisRepository._();
+
+  final _api = ApiService();
 
   // ── Analysis ────────────────────────────────────────────────────────────
 
@@ -14,95 +19,83 @@ class AnalysisRepository {
     required int contractId,
     required String contractAddr,
   }) async {
-    final db = await LocalDb.instance.database;
-    return db.insert('analyses', {
+    final json = await _api.post('/analyses/', {
       'contract_id': contractId,
       'contract_addr': contractAddr,
-      'status': AnalysisStatus.pending.name,
-      'started_at': DateTime.now().millisecondsSinceEpoch,
-    });
+    }) as Map<String, dynamic>;
+    return json['id'] as int;
   }
 
   Future<AnalysisSession?> getAnalysis(int id) async {
-    final db = await LocalDb.instance.database;
-    final rows = await db.query('analyses', where: 'id = ?', whereArgs: [id]);
-    if (rows.isEmpty) return null;
-    return AnalysisSession.fromMap(rows.first);
+    try {
+      final json = await _api.get('/analyses/$id') as Map<String, dynamic>;
+      return AnalysisSession.fromJson(json);
+    } on ApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      rethrow;
+    }
   }
 
   Future<List<AnalysisSession>> listAnalyses() async {
-    final db = await LocalDb.instance.database;
-    final rows = await db.query('analyses', orderBy: 'started_at DESC');
-    return rows.map(AnalysisSession.fromMap).toList();
+    final list = await _api.get('/analyses/') as List<dynamic>;
+    return list
+        .map((e) => AnalysisSession.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
-  Future<void> updateAnalysisStatus(int id, AnalysisStatus status,
-      {String? summary, int? estimatedCost}) async {
-    final db = await LocalDb.instance.database;
-    final m = <String, dynamic>{'status': status.name};
-    if (status == AnalysisStatus.completed) {
-      m['completed_at'] = DateTime.now().millisecondsSinceEpoch;
-    }
-    if (summary != null) m['summary'] = summary;
-    if (estimatedCost != null) m['estimated_cost'] = estimatedCost;
-    await db.update('analyses', m, where: 'id = ?', whereArgs: [id]);
+  Future<void> updateAnalysisStatus(
+    int id,
+    AnalysisStatus status, {
+    String? summary,
+    int? estimatedCost,
+  }) async {
+    final body = <String, dynamic>{'status': status.name};
+    if (summary != null) body['summary'] = summary;
+    if (estimatedCost != null) body['estimated_cost'] = estimatedCost;
+    await _api.patch('/analyses/$id', body);
   }
 
   Future<void> deleteAnalysis(int id) async {
-    final db = await LocalDb.instance.database;
-    await db.delete('messages', where: 'analysis_id = ?', whereArgs: [id]);
-    await db.delete('damage_photos', where: 'analysis_id = ?', whereArgs: [id]);
-    await db.delete('analyses', where: 'id = ?', whereArgs: [id]);
+    await _api.delete('/analyses/$id');
   }
 
   // ── Damage Photos ────────────────────────────────────────────────────────
 
+  /// S3 업로드가 끝난 사진을 분석 세션에 등록한다.
+  /// (구버전의 `addPhoto(filePath: ...)` → `s3Url: ...`로 시그니처 변경)
   Future<int> addPhoto({
     required int analysisId,
-    required String filePath,
+    required String s3Url,
     required PhotoGroup group,
     required int orderIndex,
   }) async {
-    final db = await LocalDb.instance.database;
-    return db.insert('damage_photos', {
-      'analysis_id': analysisId,
-      'file_path': filePath,
+    final json = await _api.post('/analyses/$analysisId/photos', {
+      's3_url': s3Url,
       'group_type': group.name,
       'order_index': orderIndex,
-      'analyzed': 0,
-    });
+    }) as Map<String, dynamic>;
+    return json['id'] as int;
   }
 
   Future<List<DamagePhoto>> listPhotos(int analysisId) async {
-    final db = await LocalDb.instance.database;
-    final rows = await db.query(
-      'damage_photos',
-      where: 'analysis_id = ?',
-      whereArgs: [analysisId],
-      orderBy: 'order_index ASC',
-    );
-    return rows.map(DamagePhoto.fromMap).toList();
+    final list =
+        await _api.get('/analyses/$analysisId/photos') as List<dynamic>;
+    return list
+        .map((e) => DamagePhoto.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
-  Future<void> markPhotoAnalyzed(int photoId, String aiResultJson) async {
-    final db = await LocalDb.instance.database;
-    await db.update(
-      'damage_photos',
-      {'analyzed': 1, 'ai_result': aiResultJson},
-      where: 'id = ?',
-      whereArgs: [photoId],
-    );
-  }
-
-  /// 사진의 S3 백업 URL을 기록 (업로드 성공 후 호출).
-  Future<void> setPhotoS3Url(int photoId, String s3Url) async {
-    final db = await LocalDb.instance.database;
-    await db.update(
-      'damage_photos',
-      {'s3_url': s3Url},
-      where: 'id = ?',
-      whereArgs: [photoId],
-    );
+  /// `aiResultJson`은 Map/Object를 받아 직렬화. (예: Gemini 분석 raw 결과)
+  Future<void> markPhotoAnalyzed(
+    int analysisId,
+    int photoId,
+    Object aiResult,
+  ) async {
+    await _api.patch('/analyses/$analysisId/photos/$photoId', {
+      'analyzed': true,
+      'ai_result':
+          aiResult is String ? aiResult : jsonEncode(aiResult),
+    });
   }
 
   // ── Messages ─────────────────────────────────────────────────────────────
@@ -113,24 +106,19 @@ class AnalysisRepository {
     required String content,
     int? photoId,
   }) async {
-    final db = await LocalDb.instance.database;
-    return db.insert('messages', {
-      'analysis_id': analysisId,
+    final json = await _api.post('/analyses/$analysisId/messages', {
       'role': role.name,
       'content': content,
-      'photo_id': photoId,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-    });
+      if (photoId != null) 'photo_id': photoId,
+    }) as Map<String, dynamic>;
+    return json['id'] as int;
   }
 
   Future<List<ChatMessage>> listMessages(int analysisId) async {
-    final db = await LocalDb.instance.database;
-    final rows = await db.query(
-      'messages',
-      where: 'analysis_id = ?',
-      whereArgs: [analysisId],
-      orderBy: 'created_at ASC, id ASC',
-    );
-    return rows.map(ChatMessage.fromMap).toList();
+    final list =
+        await _api.get('/analyses/$analysisId/messages') as List<dynamic>;
+    return list
+        .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 }

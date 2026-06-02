@@ -74,6 +74,22 @@ class ApiService {
     });
   }
 
+  Future<dynamic> patch(String path, Map<String, dynamic> body) async {
+    return _withRetryOn401(() async {
+      return _client.patch(
+        _uri(path),
+        headers: await _authHeaders(),
+        body: jsonEncode(body),
+      );
+    });
+  }
+
+  Future<dynamic> delete(String path) async {
+    return _withRetryOn401(() async {
+      return _client.delete(_uri(path), headers: await _authHeaders());
+    });
+  }
+
   Future<dynamic> postMultipart(
     String path, {
     required Map<String, String> fields,

@@ -53,7 +53,7 @@ _MAGIC_SAMPLE_BYTES = 256 * 1024
 def compute_image_hash_sha256(data: bytes) -> str:
     """업로드 이미지 바이트에 대한 SHA-256 지문(64자 16진 image_hash)을 반환한다.
 
-    DB의 DamageImage.file_hash, RepairEstimate.image_hash 등 무결성 필드에 그대로 저장한다.
+    DB의 AnalysisPhoto.file_hash 등 무결성 필드에 그대로 저장한다.
     """
 
     return hashlib.sha256(data).hexdigest()

@@ -419,38 +419,43 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
     });
 
     try {
-      // 1) 분석 세션 생성
+      // 1) 분석 세션 생성 (서버)
       final analysisId = await _repo.createAnalysis(
         contractId: widget.contract.id,
         contractAddr: widget.contract.address,
       );
 
-      // 2) 사진 파일을 앱 문서 폴더 하위에 복사 + S3 백업 업로드
-      //   - 로컬 SQLite가 진실 소스 (분석·PDF의 기본). S3 실패해도 흐름 안 막음.
-      //   - S3 URL은 영구 public URL 형식이라 PDF 임베드·시연 공유에 그대로 사용 가능.
-      final docs = await getApplicationDocumentsDirectory();
-      final photosDir = Directory(p.join(docs.path, 'photos', '$analysisId'));
-      await photosDir.create(recursive: true);
-
+      // 2) 각 사진을 S3에 업로드 → 성공 시 서버에 등록 (PostgreSQL).
+      //    S3가 진실 소스이므로 로컬 디스크 사본을 만들지 않는다.
       int order = 0;
       Future<void> save(_PickedPhoto photo, PhotoGroup group) async {
         final ext = p.extension(photo.file.path).isEmpty
             ? '.jpg'
             : p.extension(photo.file.path);
-        final dest = File(p.join(photosDir.path, '${group.name}_$order$ext'));
-        await dest.writeAsBytes(photo.bytes);
-        final photoId = await _repo.addPhoto(
+        // photo_upload_service는 File을 받으므로 임시 파일에 한 번만 쓴다.
+        final tmpDir = await getTemporaryDirectory();
+        final tmpFile = File(p.join(
+          tmpDir.path,
+          'upload_${DateTime.now().microsecondsSinceEpoch}_$order$ext',
+        ));
+        await tmpFile.writeAsBytes(photo.bytes);
+
+        final s3Url = await _photoUploader.uploadSingle(tmpFile);
+        // 임시 파일은 더 이상 필요 없음.
+        try {
+          await tmpFile.delete();
+        } catch (_) {}
+
+        if (s3Url == null) {
+          throw StateError('S3 업로드 실패: ${photo.file.name}');
+        }
+
+        await _repo.addPhoto(
           analysisId: analysisId,
-          filePath: dest.path,
+          s3Url: s3Url,
           group: group,
           orderIndex: order,
         );
-
-        // S3 업로드 (영구 public URL 반환). 실패 시 null → 로컬만 유지.
-        final s3Url = await _photoUploader.uploadSingle(dest);
-        if (s3Url != null) {
-          await _repo.setPhotoS3Url(photoId, s3Url);
-        }
 
         order++;
         if (!mounted) return;

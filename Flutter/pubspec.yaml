@@ -49,6 +49,8 @@ dependencies:
   printing: ^5.13.4
   # 날짜·통화 포맷
   intl: ^0.20.2
+  # PDF 삽입 전 이미지 EXIF 방향 보정·회전
+  image: ^4.0.0
 
 dev_dependencies:
   flutter_test:

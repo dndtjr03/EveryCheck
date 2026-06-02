@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:typed_data';
 
+import 'package:image/image.dart' as img;
+
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -9,6 +11,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../local/analysis_repository.dart';
+import '../models/analysis_local.dart';
 
 /// 분석 세션 1건을 PDF로 변환.
 ///
@@ -123,14 +126,32 @@ class PdfReportService {
       ),
     ));
 
-    // ── 3p~: 손상별 상세 ───────────────────────────────────────────────
-    for (var i = 0; i < analyzed.length; i++) {
-      final ph = analyzed[i];
+    // ── 3p~: 손상별 상세 (입주/퇴거 사진 쌍으로 한 페이지) ──────────────
+    // orderIndex 기준으로 입주·퇴거 사진을 매칭
+    final moveInMap = <int, DamagePhoto>{
+      for (final p in analyzed.where((p) => p.group == PhotoGroup.moveIn))
+        p.orderIndex: p
+    };
+    final moveOutMap = <int, DamagePhoto>{
+      for (final p in analyzed.where((p) => p.group == PhotoGroup.moveOut))
+        p.orderIndex: p
+    };
+    final allIndexes = {
+      ...moveInMap.keys,
+      ...moveOutMap.keys,
+    }.toList()..sort();
+
+    for (var idx = 0; idx < allIndexes.length; idx++) {
+      final key = allIndexes[idx];
+      final inPh = moveInMap[key];
+      final outPh = moveOutMap[key];
+
+      // 대표 분석 결과는 퇴거 사진 기준 (손상 판정)
       Map<String, dynamic> r = {};
-      final hasAnalysis = ph.analyzed && ph.aiResultJson != null;
-      if (hasAnalysis) {
+      final repr = outPh ?? inPh;
+      if (repr != null && repr.analyzed && repr.aiResultJson != null) {
         try {
-          r = jsonDecode(ph.aiResultJson!) as Map<String, dynamic>;
+          r = jsonDecode(repr.aiResultJson!) as Map<String, dynamic>;
         } catch (_) {}
       }
 
@@ -157,6 +178,8 @@ class PdfReportService {
         loadError = '로딩 오류: $e';
         dev.log('PDF photo load failed', name: 'pdf', error: e, stackTrace: st);
       }
+      final inImage = _loadPhotoImage(inPh);
+      final outImage = _loadPhotoImage(outPh);
 
       doc.addPage(pw.Page(
         pageFormat: PdfPageFormat.a4,
@@ -165,44 +188,17 @@ class PdfReportService {
           child: pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              _h1('${ph.group.label} 사진 ${i + 1}'),
+              _h1('사진 ${idx + 1}'),
               pw.SizedBox(height: 12),
-              if (image != null)
-                pw.ClipRRect(
-                  horizontalRadius: 8,
-                  verticalRadius: 8,
-                  child: pw.Image(image,
-                      fit: pw.BoxFit.cover, width: 515, height: 240),
-                )
-              else
-                pw.Container(
-                  height: 100,
-                  alignment: pw.Alignment.center,
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromInt(0xFFF3F4F6),
-                    borderRadius: pw.BorderRadius.circular(6),
-                  ),
-                  child: pw.Column(
-                    mainAxisAlignment: pw.MainAxisAlignment.center,
-                    children: [
-                      pw.Text(
-                        '(사진을 불러올 수 없습니다)',
-                        style: pw.TextStyle(
-                            color: PdfColor.fromInt(0xFF999999)),
-                      ),
-                      if (loadError != null) ...[
-                        pw.SizedBox(height: 4),
-                        pw.Text(
-                          loadError,
-                          style: pw.TextStyle(
-                            fontSize: 9,
-                            color: PdfColor.fromInt(0xFFB85520),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+              // 입주/퇴거 사진 나란히
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(child: _photoPanel('입주 사진', inImage)),
+                  pw.SizedBox(width: 12),
+                  pw.Expanded(child: _photoPanel('퇴거 사진', outImage)),
+                ],
+              ),
               pw.SizedBox(height: 16),
               _kv('부위', r['part']?.toString() ?? '-'),
               _kv('손상 종류', r['damage_type']?.toString() ?? '-'),
@@ -331,6 +327,87 @@ class PdfReportService {
           ),
         ],
       ),
+    );
+  }
+
+  /// 사진 로드 + EXIF 방향 보정 + 가로 사진 → 세로 자동 회전.
+  static pw.MemoryImage? _loadPhotoImage(DamagePhoto? ph) {
+    if (ph == null) return null;
+    try {
+      final f = File(ph.filePath);
+      if (!f.existsSync()) {
+        dev.log('PDF photo missing: ${ph.filePath}', name: 'pdf');
+        return null;
+      }
+      final rawBytes = f.readAsBytesSync();
+      if (rawBytes.isEmpty) return null;
+
+      // EXIF 방향 태그 적용 (스마트폰 사진은 EXIF로 회전 정보를 저장)
+      final decoded = img.decodeImage(rawBytes);
+      if (decoded == null) {
+        dev.log('PDF photo decode failed: ${ph.filePath}', name: 'pdf');
+        return pw.MemoryImage(rawBytes);
+      }
+
+      img.Image oriented = img.bakeOrientation(decoded);
+
+      // 가로 사진(width > height)이면 시계 반대 방향 90° 회전 → 세로로 변환
+      if (oriented.width > oriented.height) {
+        oriented = img.copyRotate(oriented, angle: 90);
+        dev.log('PDF photo rotated to portrait: ${ph.filePath}', name: 'pdf');
+      }
+
+      final finalBytes = img.encodeJpg(oriented, quality: 90);
+      dev.log(
+        'PDF photo ready: ${ph.filePath} '
+        '(${oriented.width}×${oriented.height})',
+        name: 'pdf',
+      );
+      return pw.MemoryImage(Uint8List.fromList(finalBytes));
+    } catch (e, st) {
+      dev.log('PDF photo load failed', name: 'pdf', error: e, stackTrace: st);
+      return null;
+    }
+  }
+
+  static pw.Widget _photoPanel(String label, pw.MemoryImage? image) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Container(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromInt(0xFFE3ECFF),
+            borderRadius: pw.BorderRadius.circular(4),
+          ),
+          child: pw.Text(label,
+              style: pw.TextStyle(
+                  fontSize: 10,
+                  color: PdfColor.fromInt(0xFF1E4FB6),
+                  fontWeight: pw.FontWeight.bold)),
+        ),
+        pw.SizedBox(height: 6),
+        if (image != null)
+          pw.ClipRRect(
+            horizontalRadius: 6,
+            verticalRadius: 6,
+            child: pw.Image(image, fit: pw.BoxFit.cover, height: 200),
+          )
+        else
+          pw.Container(
+            height: 200,
+            alignment: pw.Alignment.center,
+            decoration: pw.BoxDecoration(
+              color: PdfColor.fromInt(0xFFF3F4F6),
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Text(
+              '사진 없음',
+              style:
+                  pw.TextStyle(fontSize: 10, color: PdfColor.fromInt(0xFF999999)),
+            ),
+          ),
+      ],
     );
   }
 

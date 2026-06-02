@@ -30,13 +30,6 @@ class PhotoTypeEnum(str, enum.Enum):
     DAMAGED = "DAMAGED"
 
 
-class PhotoTypeEnum(str, enum.Enum):
-    """사진 구분: 입주·점검 시점(최초) vs 손상 후."""
-
-    INITIAL = "INITIAL"
-    DAMAGED = "DAMAGED"
-
-
 class User(Base):
     """서비스 사용자 정보를 저장하는 테이블."""
 

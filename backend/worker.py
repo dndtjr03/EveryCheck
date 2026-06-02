@@ -1,4 +1,8 @@
-"""Celery 워커 태스크: Google Gemini로 손상 이미지 분석."""
+"""Celery 워커 태스크: Google Gemini로 손상 이미지 분석.
+
+구 RepairEstimate/DamageImage 모델을 폐기하고 AnalysisPhoto 단일 행 기반으로 동작한다.
+태스크 인자는 analysis_photo_id(int) — analysis_photos 테이블의 PK.
+"""
 
 import io
 import json
@@ -12,7 +16,7 @@ import PIL.Image
 
 from celery_app import celery_app
 from database import session_scope
-from models import DamageImage, RepairEstimate, apply_ai_analysis_result, mark_analysis_failed
+from models import AnalysisPhoto, apply_ai_analysis_result, mark_analysis_failed
 from utils import compute_moliti_depreciation_tenant_cost, download_bytes_from_s3_url
 
 logger = logging.getLogger(__name__)
@@ -56,13 +60,17 @@ def _clamp01(value: Optional[Any]) -> Optional[float]:
     retry_backoff=True,
     retry_backoff_max=120,
 )
-def analyze_image_task(repair_estimate_id: int) -> dict[str, Any]:
-    """S3에 올라간 손상 이미지를 Gemini로 분석하고 repair_estimates를 갱신한다."""
+def analyze_image_task(analysis_photo_id: int) -> dict[str, Any]:
+    """S3에 올라간 손상 이미지를 Gemini로 분석하고 analysis_photos 행을 갱신한다.
+
+    TODO(Wave 2): 현재 /analyze 엔드포인트는 제거된 상태. 이 태스크는
+    `routers/analysis.py`의 신규 분석 큐잉 엔드포인트에서 호출되도록 통합 필요.
+    """
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
         logger.error("GOOGLE_API_KEY is not set")
         with session_scope() as db:
-            mark_analysis_failed(db, repair_estimate_id)
+            mark_analysis_failed(db, analysis_photo_id)
         return {"ok": False, "error": "missing_google_api_key"}
 
     genai.configure(api_key=api_key)
@@ -70,35 +78,33 @@ def analyze_image_task(repair_estimate_id: int) -> dict[str, Any]:
 
     s3_url: Optional[str] = None
     file_hash: Optional[str] = None
+    elapsed_years: float = 0.0
+    useful_life_years: float = 10.0
 
     with session_scope() as db:
-        est = (
-            db.query(RepairEstimate)
-            .filter(RepairEstimate.id == repair_estimate_id)
+        photo = (
+            db.query(AnalysisPhoto)
+            .filter(AnalysisPhoto.id == analysis_photo_id)
             .first()
         )
-        if est is None:
-            return {"ok": False, "error": "repair_estimate_not_found"}
-        if not est.damage_image_id:
-            mark_analysis_failed(db, repair_estimate_id)
-            return {"ok": False, "error": "no_damage_image"}
-        img = (
-            db.query(DamageImage)
-            .filter(DamageImage.id == est.damage_image_id)
-            .first()
-        )
-        if img is None:
-            mark_analysis_failed(db, repair_estimate_id)
-            return {"ok": False, "error": "damage_image_not_found"}
-        s3_url = img.s3_url
-        file_hash = img.file_hash
+        if photo is None:
+            return {"ok": False, "error": "analysis_photo_not_found"}
+        if not photo.s3_url:
+            mark_analysis_failed(db, analysis_photo_id)
+            return {"ok": False, "error": "no_s3_url"}
+        s3_url = photo.s3_url
+        file_hash = photo.file_hash
+        if photo.elapsed_years is not None:
+            elapsed_years = photo.elapsed_years
+        if photo.useful_life_years is not None:
+            useful_life_years = photo.useful_life_years
 
     try:
         image_bytes, _mime = download_bytes_from_s3_url(s3_url)
     except Exception as exc:
         logger.exception("S3 download failed: %s", exc)
         with session_scope() as db:
-            mark_analysis_failed(db, repair_estimate_id)
+            mark_analysis_failed(db, analysis_photo_id)
         return {"ok": False, "error": "s3_download_failed"}
 
     try:
@@ -112,7 +118,7 @@ def analyze_image_task(repair_estimate_id: int) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("Gemini analysis failed: %s", exc)
         with session_scope() as db:
-            mark_analysis_failed(db, repair_estimate_id)
+            mark_analysis_failed(db, analysis_photo_id)
         return {"ok": False, "error": "analysis_failed"}
 
     part = data.get("part")
@@ -120,7 +126,7 @@ def analyze_image_task(repair_estimate_id: int) -> dict[str, Any]:
     if part is not None:
         part = str(part)[:255]
     if damage_type is not None:
-        damage_type = str(damage_type)[:128]
+        damage_type = str(damage_type)[:64]
 
     try:
         cost = float(data.get("cost", 0))
@@ -131,23 +137,23 @@ def analyze_image_task(repair_estimate_id: int) -> dict[str, Any]:
     confidence = _clamp01(data.get("confidence"))
 
     with session_scope() as db:
-        est = (
-            db.query(RepairEstimate)
-            .filter(RepairEstimate.id == repair_estimate_id)
+        photo = (
+            db.query(AnalysisPhoto)
+            .filter(AnalysisPhoto.id == analysis_photo_id)
             .first()
         )
-        if est is None:
-            return {"ok": False, "error": "repair_estimate_not_found"}
+        if photo is None:
+            return {"ok": False, "error": "analysis_photo_not_found"}
 
         estimated_final = compute_moliti_depreciation_tenant_cost(
             cost,
-            est.elapsed_years,
-            est.useful_life_years,
+            elapsed_years,
+            useful_life_years,
         )
 
         updated = apply_ai_analysis_result(
             db,
-            repair_estimate_id,
+            analysis_photo_id,
             part=part,
             damage_type=damage_type,
             cost_total=cost,
@@ -156,11 +162,11 @@ def analyze_image_task(repair_estimate_id: int) -> dict[str, Any]:
             image_hash=file_hash,
         )
         if updated is None:
-            return {"ok": False, "error": "repair_estimate_not_found"}
+            return {"ok": False, "error": "analysis_photo_not_found"}
 
     return {
         "ok": True,
-        "repair_estimate_id": repair_estimate_id,
+        "analysis_photo_id": analysis_photo_id,
         "part": part,
         "damage_type": damage_type,
         "cost_total": cost,

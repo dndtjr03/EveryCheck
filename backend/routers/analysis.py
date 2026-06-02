@@ -1,6 +1,7 @@
-"""분석 세션·사진·메시지 REST API (로컬 SQLite 대체)."""
+"""분석 세션·사진·메시지 REST API (Flutter SQLite 대체 + 구 RepairEstimate 흡수)."""
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -124,6 +125,7 @@ def add_photo(
         group_type=body.group_type,
         order_index=body.order_index,
         analyzed=False,
+        file_hash=body.file_hash,
     )
     db.add(p)
     db.commit()
@@ -171,12 +173,39 @@ def update_photo(
     )
     if p is None:
         raise HTTPException(status_code=404, detail="photo not found")
+
+    # 기본 필드
     if body.analyzed is not None:
         p.analyzed = body.analyzed
     if body.ai_result is not None:
         p.ai_result = body.ai_result
     if body.s3_url is not None:
         p.s3_url = body.s3_url
+
+    # 구 RepairEstimate/DamageImage 흡수 필드
+    if body.file_hash is not None:
+        p.file_hash = body.file_hash
+    if body.damage_type is not None:
+        p.damage_type = body.damage_type
+    if body.part is not None:
+        p.part = body.part
+    if body.ai_confidence is not None:
+        p.ai_confidence = body.ai_confidence
+    if body.analysis_status is not None:
+        p.analysis_status = body.analysis_status
+    if body.celery_task_id is not None:
+        p.celery_task_id = body.celery_task_id
+    if body.total_repair_cost is not None:
+        p.total_repair_cost = Decimal(str(body.total_repair_cost))
+    if body.tenant_cost is not None:
+        p.tenant_cost = Decimal(str(body.tenant_cost))
+    if body.depreciation_rate is not None:
+        p.depreciation_rate = body.depreciation_rate
+    if body.useful_life_years is not None:
+        p.useful_life_years = body.useful_life_years
+    if body.elapsed_years is not None:
+        p.elapsed_years = body.elapsed_years
+
     db.commit()
     db.refresh(p)
     return p

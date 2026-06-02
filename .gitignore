@@ -246,4 +246,13 @@ Flutter/build/
 Flutter/.flutter-plugins
 Flutter/.flutter-plugins-dependencies
 
+# 과거 프런트 빌드 캐시 (소스 없음 — 더 이상 사용 안 함)
+Flutter(front)/
+
+# Chrome 디버그 프로파일에서 생성되는 확장자 없는 LOG/LOCK 파일
+**/chrome-device/**
+**/LOCK
+**/LOG
+**/LOG.old
+
 .claude

@@ -1,4 +1,7 @@
-/// 로컬 분석 세션 모델 (서버 연동 전 임시).
+/// 분석 세션·사진·메시지 모델.
+///
+/// 백엔드(PostgreSQL) JSON 응답을 기반으로 한다 — 로컬 SQLite 시절의
+/// `fromMap`(epoch ms 기반)은 더 이상 사용하지 않는다.
 class AnalysisSession {
   final int id;
   final int contractId;
@@ -20,30 +23,18 @@ class AnalysisSession {
     this.estimatedCost,
   });
 
-  factory AnalysisSession.fromMap(Map<String, dynamic> m) => AnalysisSession(
-        id: m['id'] as int,
-        contractId: m['contract_id'] as int,
-        contractAddr: m['contract_addr'] as String,
-        status: AnalysisStatus.fromString(m['status'] as String),
-        startedAt:
-            DateTime.fromMillisecondsSinceEpoch(m['started_at'] as int),
-        completedAt: m['completed_at'] != null
-            ? DateTime.fromMillisecondsSinceEpoch(m['completed_at'] as int)
+  factory AnalysisSession.fromJson(Map<String, dynamic> j) => AnalysisSession(
+        id: j['id'] as int,
+        contractId: j['contract_id'] as int,
+        contractAddr: j['contract_addr'] as String,
+        status: AnalysisStatus.fromString(j['status'] as String),
+        startedAt: DateTime.parse(j['started_at'] as String),
+        completedAt: j['completed_at'] != null
+            ? DateTime.parse(j['completed_at'] as String)
             : null,
-        summary: m['summary'] as String?,
-        estimatedCost: m['estimated_cost'] as int?,
+        summary: j['summary'] as String?,
+        estimatedCost: j['estimated_cost'] as int?,
       );
-
-  Map<String, dynamic> toMap() => {
-        'id': id,
-        'contract_id': contractId,
-        'contract_addr': contractAddr,
-        'status': status.name,
-        'started_at': startedAt.millisecondsSinceEpoch,
-        'completed_at': completedAt?.millisecondsSinceEpoch,
-        'summary': summary,
-        'estimated_cost': estimatedCost,
-      };
 }
 
 enum AnalysisStatus {
@@ -74,13 +65,13 @@ enum AnalysisStatus {
   }
 }
 
-/// 손상 사진 (분석 세션에 속함).
+/// 손상 사진 (분석 세션에 속함). S3 URL이 진실 소스.
 class DamagePhoto {
   final int id;
   final int analysisId;
-  final String filePath;
-  /// AWS S3 백업 URL. 업로드 실패/네트워크 오프라인 시 null.
-  final String? s3Url;
+
+  /// AWS S3 영구 public URL. 백엔드에 등록 시 필수.
+  final String s3Url;
   final PhotoGroup group;
   final int orderIndex;
   final bool analyzed;
@@ -89,23 +80,21 @@ class DamagePhoto {
   const DamagePhoto({
     required this.id,
     required this.analysisId,
-    required this.filePath,
-    this.s3Url,
+    required this.s3Url,
     required this.group,
     required this.orderIndex,
     required this.analyzed,
     this.aiResultJson,
   });
 
-  factory DamagePhoto.fromMap(Map<String, dynamic> m) => DamagePhoto(
-        id: m['id'] as int,
-        analysisId: m['analysis_id'] as int,
-        filePath: m['file_path'] as String,
-        s3Url: m['s3_url'] as String?,
-        group: PhotoGroup.fromString(m['group_type'] as String),
-        orderIndex: m['order_index'] as int,
-        analyzed: (m['analyzed'] as int) == 1,
-        aiResultJson: m['ai_result'] as String?,
+  factory DamagePhoto.fromJson(Map<String, dynamic> j) => DamagePhoto(
+        id: j['id'] as int,
+        analysisId: j['analysis_id'] as int,
+        s3Url: j['s3_url'] as String,
+        group: PhotoGroup.fromString(j['group_type'] as String),
+        orderIndex: j['order_index'] as int,
+        analyzed: j['analyzed'] as bool,
+        aiResultJson: j['ai_result'] as String?,
       );
 }
 
@@ -137,14 +126,13 @@ class ChatMessage {
     required this.createdAt,
   });
 
-  factory ChatMessage.fromMap(Map<String, dynamic> m) => ChatMessage(
-        id: m['id'] as int,
-        analysisId: m['analysis_id'] as int,
-        role: ChatRole.fromString(m['role'] as String),
-        content: m['content'] as String,
-        photoId: m['photo_id'] as int?,
-        createdAt:
-            DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
+  factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
+        id: j['id'] as int,
+        analysisId: j['analysis_id'] as int,
+        role: ChatRole.fromString(j['role'] as String),
+        content: j['content'] as String,
+        photoId: j['photo_id'] as int?,
+        createdAt: DateTime.parse(j['created_at'] as String),
       );
 }
 

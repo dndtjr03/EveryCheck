@@ -67,6 +67,7 @@ from auth import (
 from database import Base, engine, get_db
 from routers import photo
 from routers.checklist import router as checklist_router
+from routers.analysis import router as analysis_router
 from security_audit import init_security_audit_logger, log_sensitive_endpoint_access
 from models import DamageTypeEnum, DamageImage, RealEstate, RepairEstimate, User
 from utils import (
@@ -117,6 +118,12 @@ app.include_router(
     photo.router,
     prefix="/photos",
     tags=["photos"],
+)
+
+app.include_router(
+    analysis_router,
+    prefix="/analyses",
+    tags=["analyses"],
 )
 
 # Flutter 앱이 Gemini 키를 들고 다니지 않게 백엔드가 대신 호출하는 프록시 라우터

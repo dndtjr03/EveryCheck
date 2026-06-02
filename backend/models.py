@@ -199,6 +199,83 @@ class RepairEstimate(Base):
     damage_image = relationship("DamageImage", back_populates="repair_estimates")
 
 
+class Analysis(Base):
+    """분석 세션(한 계약에 대한 손상 분석 묶음). Flutter SQLite의 `analyses` 이식."""
+
+    __tablename__ = "analyses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    contract_id = Column(
+        Integer,
+        ForeignKey("real_estates.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    contract_addr = Column(String(255), nullable=False)
+    status = Column(String(32), nullable=False, default="pending")  # pending/in_progress/completed
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    summary = Column(Text, nullable=True)
+    estimated_cost = Column(Integer, nullable=True)
+
+    photos = relationship(
+        "AnalysisPhoto", back_populates="analysis", cascade="all, delete-orphan"
+    )
+    messages = relationship(
+        "AnalysisMessage", back_populates="analysis", cascade="all, delete-orphan"
+    )
+
+
+class AnalysisPhoto(Base):
+    """분석 세션에 속한 손상 사진. Flutter `damage_photos` 이식 — S3 URL이 진실 소스."""
+
+    __tablename__ = "analysis_photos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    analysis_id = Column(
+        Integer,
+        ForeignKey("analyses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    s3_url = Column(String(1024), nullable=False)
+    group_type = Column(String(16), nullable=False)  # move_in / move_out
+    order_index = Column(Integer, nullable=False, default=0)
+    analyzed = Column(Boolean, nullable=False, default=False)
+    ai_result = Column(Text, nullable=True)  # JSON 문자열
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    analysis = relationship("Analysis", back_populates="photos")
+
+
+class AnalysisMessage(Base):
+    """분석 세션 채팅 메시지. Flutter `messages` 이식."""
+
+    __tablename__ = "analysis_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    analysis_id = Column(
+        Integer,
+        ForeignKey("analyses.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role = Column(String(16), nullable=False)  # user / ai / system
+    content = Column(Text, nullable=False)
+    photo_id = Column(
+        Integer,
+        ForeignKey("analysis_photos.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    analysis = relationship("Analysis", back_populates="messages")
+
+
 def apply_ai_analysis_result(
     db: Session,
     repair_estimate_id: int,

@@ -295,3 +295,80 @@ class RealEstateDetail(RealEstateRead):
     damage_images: List[DamageImageRead] = []
     repair_estimates: List[RepairEstimateRead] = []
 
+
+# -----------------------------
+# Analysis (분석 세션 — Flutter SQLite 이식)
+# -----------------------------
+
+
+AnalysisStatusLiteral = Literal["pending", "in_progress", "completed"]
+PhotoGroupLiteral = Literal["move_in", "move_out"]
+ChatRoleLiteral = Literal["user", "ai", "system"]
+
+
+class AnalysisCreate(BaseModel):
+    contract_id: int
+    contract_addr: str
+
+
+class AnalysisUpdate(BaseModel):
+    status: Optional[AnalysisStatusLiteral] = None
+    summary: Optional[str] = None
+    estimated_cost: Optional[int] = None
+
+
+class AnalysisRead(BaseModel):
+    id: int
+    owner_id: int
+    contract_id: int
+    contract_addr: str
+    status: AnalysisStatusLiteral
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    summary: Optional[str] = None
+    estimated_cost: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AnalysisPhotoCreate(BaseModel):
+    s3_url: str
+    group_type: PhotoGroupLiteral
+    order_index: int = 0
+
+
+class AnalysisPhotoUpdate(BaseModel):
+    analyzed: Optional[bool] = None
+    ai_result: Optional[str] = None
+    s3_url: Optional[str] = None
+
+
+class AnalysisPhotoRead(BaseModel):
+    id: int
+    analysis_id: int
+    s3_url: str
+    group_type: PhotoGroupLiteral
+    order_index: int
+    analyzed: bool
+    ai_result: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AnalysisMessageCreate(BaseModel):
+    role: ChatRoleLiteral
+    content: str
+    photo_id: Optional[int] = None
+
+
+class AnalysisMessageRead(BaseModel):
+    id: int
+    analysis_id: int
+    role: ChatRoleLiteral
+    content: str
+    photo_id: Optional[int] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+

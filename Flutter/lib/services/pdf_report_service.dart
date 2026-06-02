@@ -155,7 +155,6 @@ class PdfReportService {
         } catch (_) {}
       }
 
-<<<<<<< Updated upstream
       // 사진 로딩: S3 public URL에서 직접 다운로드.
       // 디버그 콘솔에 단계별 상태를 남겨 "PDF에 사진이 안 들어간다" 진단을 돕는다.
       pw.MemoryImage? image;
@@ -179,10 +178,8 @@ class PdfReportService {
         loadError = '로딩 오류: $e';
         dev.log('PDF photo load failed', name: 'pdf', error: e, stackTrace: st);
       }
-=======
       final inImage = _loadPhotoImage(inPh);
       final outImage = _loadPhotoImage(outPh);
->>>>>>> Stashed changes
 
       doc.addPage(pw.Page(
         pageFormat: PdfPageFormat.a4,

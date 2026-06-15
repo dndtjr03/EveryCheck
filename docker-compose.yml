@@ -18,10 +18,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   web:
-    # Dockerfile 은 backend/ 하위에 있음. 루트 컨텍스트로 빌드하면 실패.
+    # Dockerfile 이 `COPY backend/...` 와 `COPY static/` 를 쓰므로 컨텍스트는 repo 루트.
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: teogeo-api
     restart: unless-stopped
     env_file:
@@ -46,8 +46,8 @@ services:
 
   worker:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: teogeo-celery-worker
     restart: unless-stopped
     env_file:

@@ -58,35 +58,46 @@ class ApiService {
 
   // ── 공개 HTTP 메서드 ─────────────────────────────────────────────────────
 
+  /// 모든 API 요청에 공통 적용되는 timeout. 무한 로딩 방지.
+  static const _defaultTimeout = Duration(seconds: 15);
+
   Future<dynamic> get(String path) async {
     return _withRetryOn401(() async {
-      return _client.get(_uri(path), headers: await _authHeaders());
+      return _client
+          .get(_uri(path), headers: await _authHeaders())
+          .timeout(_defaultTimeout);
     });
   }
 
   Future<dynamic> post(String path, Map<String, dynamic> body) async {
     return _withRetryOn401(() async {
-      return _client.post(
-        _uri(path),
-        headers: await _authHeaders(),
-        body: jsonEncode(body),
-      );
+      return _client
+          .post(
+            _uri(path),
+            headers: await _authHeaders(),
+            body: jsonEncode(body),
+          )
+          .timeout(_defaultTimeout);
     });
   }
 
   Future<dynamic> patch(String path, Map<String, dynamic> body) async {
     return _withRetryOn401(() async {
-      return _client.patch(
-        _uri(path),
-        headers: await _authHeaders(),
-        body: jsonEncode(body),
-      );
+      return _client
+          .patch(
+            _uri(path),
+            headers: await _authHeaders(),
+            body: jsonEncode(body),
+          )
+          .timeout(_defaultTimeout);
     });
   }
 
   Future<dynamic> delete(String path) async {
     return _withRetryOn401(() async {
-      return _client.delete(_uri(path), headers: await _authHeaders());
+      return _client
+          .delete(_uri(path), headers: await _authHeaders())
+          .timeout(_defaultTimeout);
     });
   }
 
@@ -115,7 +126,9 @@ class ApiService {
             ? MediaType.parse(fileContentType)
             : null,
       ));
-      final streamed = await _client.send(request);
+      final streamed = await _client.send(request).timeout(
+            const Duration(seconds: 60),
+          );
       return http.Response.fromStream(streamed);
     });
   }
@@ -165,11 +178,13 @@ class ApiService {
     final refresh = await getRefreshToken();
     if (refresh == null || refresh.isEmpty) return false;
     try {
-      final resp = await _client.post(
-        _uri('/auth/refresh'),
-        headers: const {'content-type': 'application/json'},
-        body: jsonEncode({'refresh_token': refresh}),
-      );
+      final resp = await _client
+          .post(
+            _uri('/auth/refresh'),
+            headers: const {'content-type': 'application/json'},
+            body: jsonEncode({'refresh_token': refresh}),
+          )
+          .timeout(_defaultTimeout);
       if (resp.statusCode != 200) return false;
       final json =
           jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;

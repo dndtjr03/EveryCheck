@@ -5,11 +5,13 @@ import logging
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 import schemas
 from auth import get_current_active_user
+from config import get_settings
+from core.rate_limit import limiter
 from database import get_db
 from models import Checklist, Photo, PhotoTypeEnum, User
 from photo_storage import (
@@ -21,6 +23,11 @@ from photo_storage import (
     create_photo_storage,
     resolve_storage_file_key,
     storage_backend_label,
+)
+from utils import (
+    compute_image_hash_sha256,
+    upload_image_to_s3,
+    validate_and_read_image_file,
 )
 
 router = APIRouter()
@@ -325,3 +332,51 @@ async def get_photo(
         )
 
     return await _build_display_item(photo, _get_storage(), expires_in=expires_in)
+
+
+@router.post(
+    "/upload-single",
+    summary="단순 사진 업로드 → S3 (분석·체크리스트와 무관)",
+    description=(
+        "Flutter 분석 화면이 사용하는 단일 사진 S3 업로드 엔드포인트. "
+        "DB에 별도 행을 만들지 않고 S3 URL만 반환한다."
+    ),
+)
+@limiter.limit("30/minute")
+async def upload_single_photo(
+    request: Request,
+    file: UploadFile = File(..., description="JPEG/PNG/WEBP 이미지 1장"),
+    current_user: User = Depends(get_current_active_user),
+) -> dict:
+    """분석 모델과 분리된 단일 사진 S3 업로드.
+
+    Flutter 측은 받은 s3_url 을 `/analyses/{id}/photos` POST 본문의 `s3_url` 에 넣어 등록한다.
+    """
+    try:
+        file_bytes, detected_mime = await validate_and_read_image_file(file)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    bucket_name = get_settings().s3_bucket_name or ""
+    if not bucket_name:
+        raise HTTPException(
+            status_code=503,
+            detail="S3_BUCKET_NAME 환경 변수가 비어 있습니다.",
+        )
+
+    try:
+        s3_url = await upload_image_to_s3(
+            file,
+            bucket_name=bucket_name,
+            body=file_bytes,
+            content_type=detected_mime,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {
+        "s3_url": s3_url,
+        "image_hash": compute_image_hash_sha256(file_bytes),
+        "content_type": detected_mime,
+        "bytes": len(file_bytes),
+    }

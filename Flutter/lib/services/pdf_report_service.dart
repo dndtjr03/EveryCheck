@@ -155,31 +155,9 @@ class PdfReportService {
         } catch (_) {}
       }
 
-      // 사진 로딩: S3 public URL에서 직접 다운로드.
-      // 디버그 콘솔에 단계별 상태를 남겨 "PDF에 사진이 안 들어간다" 진단을 돕는다.
-      pw.MemoryImage? image;
-      String? loadError;
-      try {
-        final resp = await http.get(Uri.parse(ph.s3Url));
-        if (resp.statusCode != 200) {
-          loadError = '다운로드 실패 (${resp.statusCode}): ${ph.s3Url}';
-          dev.log(loadError, name: 'pdf');
-        } else if (resp.bodyBytes.isEmpty) {
-          loadError = '응답이 비어 있음: ${ph.s3Url}';
-          dev.log(loadError, name: 'pdf');
-        } else {
-          image = pw.MemoryImage(resp.bodyBytes);
-          dev.log(
-            'PDF photo loaded: ${ph.s3Url} (${resp.bodyBytes.length} bytes)',
-            name: 'pdf',
-          );
-        }
-      } catch (e, st) {
-        loadError = '로딩 오류: $e';
-        dev.log('PDF photo load failed', name: 'pdf', error: e, stackTrace: st);
-      }
-      final inImage = _loadPhotoImage(inPh);
-      final outImage = _loadPhotoImage(outPh);
+      // 입주/퇴거 사진은 각각 S3에서 비동기 다운로드 후 PDF 임베드.
+      final inImage = await _loadPhotoImage(inPh);
+      final outImage = await _loadPhotoImage(outPh);
 
       doc.addPage(pw.Page(
         pageFormat: PdfPageFormat.a4,
@@ -330,22 +308,28 @@ class PdfReportService {
     );
   }
 
-  /// 사진 로드 + EXIF 방향 보정 + 가로 사진 → 세로 자동 회전.
-  static pw.MemoryImage? _loadPhotoImage(DamagePhoto? ph) {
+  /// S3에서 사진 다운로드 + EXIF 방향 보정 + 가로 사진 → 세로 자동 회전.
+  static Future<pw.MemoryImage?> _loadPhotoImage(DamagePhoto? ph) async {
     if (ph == null) return null;
     try {
-      final f = File(ph.filePath);
-      if (!f.existsSync()) {
-        dev.log('PDF photo missing: ${ph.filePath}', name: 'pdf');
+      final resp = await http.get(Uri.parse(ph.s3Url));
+      if (resp.statusCode != 200) {
+        dev.log(
+          'PDF photo download failed (${resp.statusCode}): ${ph.s3Url}',
+          name: 'pdf',
+        );
         return null;
       }
-      final rawBytes = f.readAsBytesSync();
-      if (rawBytes.isEmpty) return null;
+      final rawBytes = resp.bodyBytes;
+      if (rawBytes.isEmpty) {
+        dev.log('PDF photo empty: ${ph.s3Url}', name: 'pdf');
+        return null;
+      }
 
       // EXIF 방향 태그 적용 (스마트폰 사진은 EXIF로 회전 정보를 저장)
       final decoded = img.decodeImage(rawBytes);
       if (decoded == null) {
-        dev.log('PDF photo decode failed: ${ph.filePath}', name: 'pdf');
+        dev.log('PDF photo decode failed: ${ph.s3Url}', name: 'pdf');
         return pw.MemoryImage(rawBytes);
       }
 
@@ -354,13 +338,13 @@ class PdfReportService {
       // 가로 사진(width > height)이면 시계 반대 방향 90° 회전 → 세로로 변환
       if (oriented.width > oriented.height) {
         oriented = img.copyRotate(oriented, angle: 90);
-        dev.log('PDF photo rotated to portrait: ${ph.filePath}', name: 'pdf');
+        dev.log('PDF photo rotated to portrait: ${ph.s3Url}', name: 'pdf');
       }
 
       final finalBytes = img.encodeJpg(oriented, quality: 90);
       dev.log(
-        'PDF photo ready: ${ph.filePath} '
-        '(${oriented.width}×${oriented.height})',
+        'PDF photo ready: ${ph.s3Url} '
+        '(${oriented.width}x${oriented.height})',
         name: 'pdf',
       );
       return pw.MemoryImage(Uint8List.fromList(finalBytes));

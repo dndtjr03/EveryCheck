@@ -189,7 +189,12 @@ def put_bytes_to_s3(
     body: bytes,
     content_type: str,
 ) -> str:
-    """바이트를 S3에 업로드하고 퍼블릭 URL을 반환한다."""
+    """바이트를 S3에 업로드하고 Presigned GET URL을 반환한다.
+
+    버킷 정책이 "Bucket owner enforced" 인 환경(현재 운영 표준)에서는
+    ACL 가 무시되어 퍼블릭 URL 로는 403 이 반환된다. 시간 제한 Presigned URL 로
+    응답하여 호출자(Flutter / Celery)가 즉시 다운로드 가능하도록 한다.
+    """
 
     if not bucket_name:
         raise ValueError("S3 버킷 이름이 설정되지 않았습니다. S3_BUCKET_NAME 환경 변수를 확인하세요.")
@@ -200,7 +205,12 @@ def put_bytes_to_s3(
         Body=body,
         ContentType=content_type,
     )
-    return build_s3_public_url(bucket_name, key)
+    # 7일(S3 Presigned URL 최대값)로 발급. 그 이후 다운로드 필요 시 별도 재발급 API 사용.
+    return generate_presigned_get_url(
+        bucket_name=bucket_name,
+        key=key,
+        expires_in=7 * 24 * 60 * 60,
+    )
 
 
 def delete_object_from_s3(*, bucket_name: str, key: str) -> None:

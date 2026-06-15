@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.0+3
 
 environment:
   sdk: ^3.11.1
@@ -63,6 +63,28 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # 런처 아이콘 일괄 생성 (`flutter pub run flutter_launcher_icons`)
+  flutter_launcher_icons: ^0.14.1
+
+# 런처 아이콘 설정 (다봐드림 로고)
+# 실행: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  android: "ic_launcher"             # mipmap-*/ic_launcher.png 갱신
+  ios: false                          # iOS 폴더 없으므로 비활성
+  remove_alpha_ios: true
+  min_sdk_android: 21
+  # Android 8+ adaptive icon — 배경은 로고의 하늘색
+  adaptive_icon_background: "#5BC2F0"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  web:
+    generate: false
+  windows:
+    generate: false
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -86,6 +108,7 @@ flutter:
 
   assets:
     - assets/fonts/
+    - assets/icon/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

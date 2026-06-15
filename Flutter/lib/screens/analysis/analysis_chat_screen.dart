@@ -109,8 +109,17 @@ class _AnalysisChatScreenState extends State<AnalysisChatScreen> {
 
   /// S3 public URL에서 사진 바이트를 직접 다운로드.
   /// 같은 사진을 여러 번 사용하는 호출자는 결과를 캐시해 사용해야 함.
+  /// 15초 내 응답 없으면 TimeoutException 던짐 (네트워크 hang 차단용).
   Future<Uint8List> _fetchPhotoBytes(DamagePhoto photo) async {
-    final resp = await http.get(Uri.parse(photo.s3Url));
+    final uri = Uri.parse(photo.s3Url);
+    final http.Response resp;
+    try {
+      resp = await http
+          .get(uri)
+          .timeout(const Duration(seconds: 15));
+    } catch (e) {
+      throw StateError('사진 다운로드 실패 ($e): ${photo.s3Url}');
+    }
     if (resp.statusCode != 200) {
       throw StateError(
           '사진 다운로드 실패 (${resp.statusCode}): ${photo.s3Url}');
@@ -163,9 +172,21 @@ class _AnalysisChatScreenState extends State<AnalysisChatScreen> {
     );
 
     // 입주 사진들 bytes를 한 번만 미리 다운로드해 메모리에 보관 (퇴거 사진마다 재전송).
+    // 다운로드 실패 시 채팅창에 명확한 에러 메시지를 띄우고 분석을 중단한다 (무한 로딩 방지).
     List<Uint8List> moveInBytes = const [];
     if (useBaseline) {
-      moveInBytes = await Future.wait(moveIns.map(_fetchPhotoBytes));
+      try {
+        moveInBytes = await Future.wait(moveIns.map(_fetchPhotoBytes));
+      } catch (e) {
+        await _addMessage(
+          ChatRole.ai,
+          '⚠️ 입주 사진을 불러오지 못해 분석을 중단합니다.\n원인: $e',
+        );
+        await _repo.updateAnalysisStatus(
+            widget.analysisId, AnalysisStatus.pending);
+        if (mounted) setState(() => _analyzing = false);
+        return;
+      }
     }
 
     final results = <Map<String, dynamic>>[];

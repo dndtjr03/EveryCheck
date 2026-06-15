@@ -1,25 +1,13 @@
-import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_theme.dart';
-import '../../local/analysis_repository.dart';
 import '../../models/analysis_local.dart';
+import '../../models/picked_photo.dart';
 import '../../models/real_estate.dart';
 import '../../providers/contract_provider.dart';
-import '../../services/photo_upload_service.dart';
 import '../contract/contract_form_screen.dart';
-import 'analysis_chat_screen.dart';
-
-/// 한 장의 선택된 사진 (파일 + 디코딩된 바이트).
-class _PickedPhoto {
-  final XFile file;
-  final Uint8List bytes;
-  const _PickedPhoto(this.file, this.bytes);
-}
+import 'analysis_loading_screen.dart';
 
 /// 분석 탭 진입점: 계약이 없으면 선택 화면, 있으면 사진 업로드 화면
 class ImageUploadScreen extends StatelessWidget {
@@ -228,17 +216,11 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
   static const int _maxPerGroup = 30;
 
   final _picker = ImagePicker();
-  final _repo = AnalysisRepository.instance;
-  final _photoUploader = PhotoUploadService.instance;
 
-  final List<_PickedPhoto> _moveInPhotos  = [];
-  final List<_PickedPhoto> _moveOutPhotos = [];
+  final List<PickedPhoto> _moveInPhotos  = [];
+  final List<PickedPhoto> _moveOutPhotos = [];
 
-  bool _uploading = false;
-  int  _uploadProgress = 0;
-  int  _uploadTotal    = 0;
-
-  List<_PickedPhoto> _group(bool isMoveIn) =>
+  List<PickedPhoto> _group(bool isMoveIn) =>
       isMoveIn ? _moveInPhotos : _moveOutPhotos;
 
   /// 카메라/갤러리 선택 BottomSheet
@@ -342,10 +324,10 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
     }
 
     // 선택된 파일 모두 디코딩 후 그룹에 추가
-    final newPhotos = <_PickedPhoto>[];
+    final newPhotos = <PickedPhoto>[];
     for (final f in picked) {
       final bytes = await f.readAsBytes();
-      newPhotos.add(_PickedPhoto(f, bytes));
+      newPhotos.add(PickedPhoto(f, bytes));
     }
     if (!mounted) return;
     setState(() => _group(isMoveIn).addAll(newPhotos));
@@ -403,90 +385,22 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
     );
   }
 
-  /// 사진을 앱 문서 폴더에 복사하고 SQLite에 분석 세션 생성 후 채팅 화면으로 진입.
-  /// (서버 도입 전 임시 구현 — 도입 시 upload API 호출로 교체)
-  Future<void> _saveImages() async {
+  /// 분석 로딩 화면으로 진입. 업로드/분석 파이프라인은 loading screen이 모두 수행.
+  Future<void> _startAnalysisFlow() async {
     final total = _moveInPhotos.length + _moveOutPhotos.length;
     if (total == 0) {
       _showSnack('사진을 최소 1장 선택해주세요.', AppColors.danger);
       return;
     }
-
-    setState(() {
-      _uploading = true;
-      _uploadProgress = 0;
-      _uploadTotal = total;
-    });
-
-    try {
-      // 1) 분석 세션 생성 (서버)
-      final analysisId = await _repo.createAnalysis(
-        contractId: widget.contract.id,
-        contractAddr: widget.contract.address,
-      );
-
-      // 2) 각 사진을 S3에 업로드 → 성공 시 서버에 등록 (PostgreSQL).
-      //    S3가 진실 소스이므로 로컬 디스크 사본을 만들지 않는다.
-      int order = 0;
-      Future<void> save(_PickedPhoto photo, PhotoGroup group) async {
-        final ext = p.extension(photo.file.path).isEmpty
-            ? '.jpg'
-            : p.extension(photo.file.path);
-        // photo_upload_service는 File을 받으므로 임시 파일에 한 번만 쓴다.
-        final tmpDir = await getTemporaryDirectory();
-        final tmpFile = File(p.join(
-          tmpDir.path,
-          'upload_${DateTime.now().microsecondsSinceEpoch}_$order$ext',
-        ));
-        await tmpFile.writeAsBytes(photo.bytes);
-
-        final s3Url = await _photoUploader.uploadSingle(tmpFile);
-        // 임시 파일은 더 이상 필요 없음.
-        try {
-          await tmpFile.delete();
-        } catch (_) {}
-
-        if (s3Url == null) {
-          throw StateError('S3 업로드 실패: ${photo.file.name}');
-        }
-
-        await _repo.addPhoto(
-          analysisId: analysisId,
-          s3Url: s3Url,
-          group: group,
-          orderIndex: order,
-        );
-
-        order++;
-        if (!mounted) return;
-        setState(() => _uploadProgress++);
-      }
-
-      for (final photo in _moveInPhotos) {
-        await save(photo, PhotoGroup.moveIn);
-      }
-      for (final photo in _moveOutPhotos) {
-        await save(photo, PhotoGroup.moveOut);
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _uploading = false;
-        _moveInPhotos.clear();
-        _moveOutPhotos.clear();
-      });
-
-      // 3) 채팅 화면으로 진입
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => AnalysisChatScreen(analysisId: analysisId),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AnalysisLoadingScreen(
+          contract: widget.contract,
+          moveInPhotos: List.unmodifiable(_moveInPhotos),
+          moveOutPhotos: List.unmodifiable(_moveOutPhotos),
         ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _uploading = false);
-      _showSnack(e.toString(), AppColors.danger);
-    }
+      ),
+    );
   }
 
   @override
@@ -542,45 +456,24 @@ class _PhotoUploadScreenState extends State<_PhotoUploadScreen> {
               onRemove: (i) => _removePhoto(false, i),
             ),
             const SizedBox(height: 32),
-            if (_uploading) ...[
-              LinearProgressIndicator(
-                value: _uploadTotal == 0
-                    ? null
-                    : _uploadProgress / _uploadTotal,
-                color: AppColors.primary,
-                backgroundColor: AppColors.primaryLight,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '$_uploadProgress / $_uploadTotal 업로드 중...',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, color: AppColors.n500),
-              ),
-              const SizedBox(height: 16),
-            ],
             ElevatedButton(
-              onPressed: totalCount == 0 || _uploading ? null : _saveImages,
+              onPressed: totalCount == 0 ? null : _startAnalysisFlow,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 disabledBackgroundColor: AppColors.n200,
                 minimumSize: const Size(double.infinity, 52),
                 shape: const StadiumBorder(),
               ),
-              child: _uploading
-                  ? const SizedBox(
-                      width: 22, height: 22,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : Text(
-                      totalCount == 0
-                          ? '📁 사진 저장하기'
-                          : '📁 사진 $totalCount장 저장하기',
-                      style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white),
-                    ),
+              child: Text(
+                totalCount == 0
+                    ? '🔍 분석하기'
+                    : '🔍 사진 $totalCount장 분석하기',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ],
         ),
@@ -645,7 +538,7 @@ class _UploadGroupCard extends StatelessWidget {
   final String emoji;
   final String label;
   final String desc;
-  final List<_PickedPhoto> photos;
+  final List<PickedPhoto> photos;
   final int max;
   final VoidCallback onAdd;
   final void Function(int index) onRemove;

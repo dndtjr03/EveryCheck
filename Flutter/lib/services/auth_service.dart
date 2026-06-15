@@ -14,6 +14,12 @@ class AuthService {
       Uri.parse('${AppConfig.baseUrl}/auth/token'),
       headers: {'content-type': 'application/x-www-form-urlencoded'},
       body: {'username': email, 'password': password},
+    ).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => throw const ApiException(
+        408,
+        '서버 연결 시간이 초과됐어요. 네트워크 또는 서버 주소를 확인하세요.',
+      ),
     );
     if (resp.statusCode != 200) {
       String detail = 'Login failed';

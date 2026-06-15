@@ -14,10 +14,15 @@ router = APIRouter()
 
 
 @router.get(
-    "/",
+    "",
     response_model=List[schemas.ChecklistRead],
     summary="체크리스트 전체 조회 (테스트, 인증 없음)",
     description="DB에 저장된 모든 체크리스트를 id 오름차순으로 반환합니다. seed_data.py 결과 확인용입니다.",
+)
+@router.get(
+    "/",
+    response_model=List[schemas.ChecklistRead],
+    include_in_schema=False,
 )
 def list_all_checklists(db: Session = Depends(get_db)) -> List[Checklist]:
     return db.query(Checklist).order_by(Checklist.id.asc()).all()
@@ -41,10 +46,16 @@ def list_my_checklists(
 
 
 @router.post(
-    "/",
+    "",
     response_model=schemas.ChecklistRead,
     status_code=201,
     summary="체크리스트 생성 (로그인 사용자 본인 소유)",
+)
+@router.post(
+    "/",
+    response_model=schemas.ChecklistRead,
+    status_code=201,
+    include_in_schema=False,
 )
 def create_checklist(
     body: schemas.ChecklistCreate,

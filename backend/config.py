@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # --- Runtime profile ---
     environment: Literal["dev", "staging", "prod"] = "dev"
 
+    # --- HTTP security ---
+    # HSTS는 HTTPS 운영에서만 켤 것. dev 로컬은 false 유지.
+    enable_hsts: bool = False
+
     model_config = SettingsConfigDict(
         env_file=_PROJECT_ROOT_ENV,
         env_file_encoding="utf-8",

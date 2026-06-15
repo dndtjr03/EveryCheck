@@ -18,7 +18,10 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   web:
-    build: .
+    # Dockerfile 은 backend/ 하위에 있음. 루트 컨텍스트로 빌드하면 실패.
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: teogeo-api
     restart: unless-stopped
     env_file:
@@ -26,16 +29,11 @@ services:
     depends_on:
       - db
       - redis
-    environment:
-      # .env에서 불러온 값을 그대로 사용
-      - DATABASE_URL=${DATABASE_URL}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - JWT_ALGORITHM=${JWT_ALGORITHM}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
-      - AWS_REGION=${AWS_REGION}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+    # env_file 만으로 모든 환경변수 주입됨 (중복 environment 블록 제거).
+    # Nginx 가 web:8000 으로 내부 접근하므로 호스트 노출은 디버깅 시에만.
+    # .env 에 WEB_HOST_PORT=8000 설정 시 호스트에서 직접 접근 가능.
     ports:
-      - "8000:8000"
+      - "${WEB_HOST_PORT:-127.0.0.1:8000}:8000"
 
   redis:
     image: redis:7-alpine
@@ -47,7 +45,9 @@ services:
       - redis_data:/data
 
   worker:
-    build: .
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: teogeo-celery-worker
     restart: unless-stopped
     env_file:

@@ -1,7 +1,8 @@
-"""분석 세션·사진·메시지 REST API (Flutter SQLite 대체 + 구 RepairEstimate 흡수)."""
+"""분석 세션·사진·메시지 REST API (Flutter SQLite 대체 + 구 RepairEstimate 흡수).
 
-from datetime import datetime, timezone
-from decimal import Decimal
+라우터는 HTTP 입출력 변환 + 소유권 확인만 담당. 도메인 로직은 services/analysis_service에 위치.
+"""
+
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,14 +11,15 @@ from sqlalchemy.orm import Session
 import schemas
 from auth import get_current_active_user
 from database import get_db
-from models import Analysis, AnalysisMessage, AnalysisPhoto, RealEstate, User
+from models import Analysis, AnalysisMessage, AnalysisPhoto, User
+from services import analysis_service
 
 router = APIRouter()
 
 
-def _own_analysis_or_404(db: Session, analysis_id: int, user: User) -> Analysis:
-    a = db.query(Analysis).filter(Analysis.id == analysis_id).first()
-    if a is None or a.owner_id != user.id:
+def _own_or_404(db: Session, analysis_id: int, user: User) -> Analysis:
+    a = analysis_service.get_owned(db, owner=user, analysis_id=analysis_id)
+    if a is None:
         raise HTTPException(status_code=404, detail="analysis not found")
     return a
 
@@ -25,42 +27,26 @@ def _own_analysis_or_404(db: Session, analysis_id: int, user: User) -> Analysis:
 # ── Analysis ────────────────────────────────────────────────────────────
 
 
-@router.post("/", response_model=schemas.AnalysisRead, status_code=201)
+@router.post("", response_model=schemas.AnalysisRead, status_code=201)
+@router.post("/", response_model=schemas.AnalysisRead, status_code=201, include_in_schema=False)
 def create_analysis(
     body: schemas.AnalysisCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> Analysis:
-    contract = (
-        db.query(RealEstate)
-        .filter(RealEstate.id == body.contract_id, RealEstate.owner_id == user.id)
-        .first()
-    )
-    if contract is None:
+    a = analysis_service.create_for_contract(db, owner=user, payload=body)
+    if a is None:
         raise HTTPException(status_code=404, detail="contract not found")
-    a = Analysis(
-        owner_id=user.id,
-        contract_id=body.contract_id,
-        contract_addr=body.contract_addr,
-        status="pending",
-    )
-    db.add(a)
-    db.commit()
-    db.refresh(a)
     return a
 
 
-@router.get("/", response_model=List[schemas.AnalysisRead])
+@router.get("", response_model=List[schemas.AnalysisRead])
+@router.get("/", response_model=List[schemas.AnalysisRead], include_in_schema=False)
 def list_analyses(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> List[Analysis]:
-    return (
-        db.query(Analysis)
-        .filter(Analysis.owner_id == user.id)
-        .order_by(Analysis.started_at.desc())
-        .all()
-    )
+    return analysis_service.list_for_owner(db, owner=user)
 
 
 @router.get("/{analysis_id}", response_model=schemas.AnalysisRead)
@@ -69,7 +55,7 @@ def get_analysis(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> Analysis:
-    return _own_analysis_or_404(db, analysis_id, user)
+    return _own_or_404(db, analysis_id, user)
 
 
 @router.patch("/{analysis_id}", response_model=schemas.AnalysisRead)
@@ -79,18 +65,8 @@ def update_analysis(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> Analysis:
-    a = _own_analysis_or_404(db, analysis_id, user)
-    if body.status is not None:
-        a.status = body.status
-        if body.status == "completed" and a.completed_at is None:
-            a.completed_at = datetime.now(timezone.utc)
-    if body.summary is not None:
-        a.summary = body.summary
-    if body.estimated_cost is not None:
-        a.estimated_cost = body.estimated_cost
-    db.commit()
-    db.refresh(a)
-    return a
+    a = _own_or_404(db, analysis_id, user)
+    return analysis_service.update(db, a, body)
 
 
 @router.delete("/{analysis_id}", status_code=204)
@@ -99,9 +75,8 @@ def delete_analysis(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> None:
-    a = _own_analysis_or_404(db, analysis_id, user)
-    db.delete(a)
-    db.commit()
+    a = _own_or_404(db, analysis_id, user)
+    analysis_service.delete(db, a)
 
 
 # ── Photos ─────────────────────────────────────────────────────────────
@@ -118,19 +93,8 @@ def add_photo(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> AnalysisPhoto:
-    _own_analysis_or_404(db, analysis_id, user)
-    p = AnalysisPhoto(
-        analysis_id=analysis_id,
-        s3_url=body.s3_url,
-        group_type=body.group_type,
-        order_index=body.order_index,
-        analyzed=False,
-        file_hash=body.file_hash,
-    )
-    db.add(p)
-    db.commit()
-    db.refresh(p)
-    return p
+    _own_or_404(db, analysis_id, user)
+    return analysis_service.add_photo(db, analysis_id=analysis_id, payload=body)
 
 
 @router.get(
@@ -142,13 +106,8 @@ def list_photos(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> List[AnalysisPhoto]:
-    _own_analysis_or_404(db, analysis_id, user)
-    return (
-        db.query(AnalysisPhoto)
-        .filter(AnalysisPhoto.analysis_id == analysis_id)
-        .order_by(AnalysisPhoto.order_index.asc())
-        .all()
-    )
+    _own_or_404(db, analysis_id, user)
+    return analysis_service.list_photos(db, analysis_id)
 
 
 @router.patch(
@@ -162,53 +121,11 @@ def update_photo(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> AnalysisPhoto:
-    _own_analysis_or_404(db, analysis_id, user)
-    p = (
-        db.query(AnalysisPhoto)
-        .filter(
-            AnalysisPhoto.id == photo_id,
-            AnalysisPhoto.analysis_id == analysis_id,
-        )
-        .first()
-    )
+    _own_or_404(db, analysis_id, user)
+    p = analysis_service.get_photo(db, analysis_id=analysis_id, photo_id=photo_id)
     if p is None:
         raise HTTPException(status_code=404, detail="photo not found")
-
-    # 기본 필드
-    if body.analyzed is not None:
-        p.analyzed = body.analyzed
-    if body.ai_result is not None:
-        p.ai_result = body.ai_result
-    if body.s3_url is not None:
-        p.s3_url = body.s3_url
-
-    # 구 RepairEstimate/DamageImage 흡수 필드
-    if body.file_hash is not None:
-        p.file_hash = body.file_hash
-    if body.damage_type is not None:
-        p.damage_type = body.damage_type
-    if body.part is not None:
-        p.part = body.part
-    if body.ai_confidence is not None:
-        p.ai_confidence = body.ai_confidence
-    if body.analysis_status is not None:
-        p.analysis_status = body.analysis_status
-    if body.celery_task_id is not None:
-        p.celery_task_id = body.celery_task_id
-    if body.total_repair_cost is not None:
-        p.total_repair_cost = Decimal(str(body.total_repair_cost))
-    if body.tenant_cost is not None:
-        p.tenant_cost = Decimal(str(body.tenant_cost))
-    if body.depreciation_rate is not None:
-        p.depreciation_rate = body.depreciation_rate
-    if body.useful_life_years is not None:
-        p.useful_life_years = body.useful_life_years
-    if body.elapsed_years is not None:
-        p.elapsed_years = body.elapsed_years
-
-    db.commit()
-    db.refresh(p)
-    return p
+    return analysis_service.update_photo(db, p, body)
 
 
 # ── Messages ───────────────────────────────────────────────────────────
@@ -225,17 +142,8 @@ def add_message(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> AnalysisMessage:
-    _own_analysis_or_404(db, analysis_id, user)
-    m = AnalysisMessage(
-        analysis_id=analysis_id,
-        role=body.role,
-        content=body.content,
-        photo_id=body.photo_id,
-    )
-    db.add(m)
-    db.commit()
-    db.refresh(m)
-    return m
+    _own_or_404(db, analysis_id, user)
+    return analysis_service.add_message(db, analysis_id=analysis_id, payload=body)
 
 
 @router.get(
@@ -247,10 +155,5 @@ def list_messages(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_active_user),
 ) -> List[AnalysisMessage]:
-    _own_analysis_or_404(db, analysis_id, user)
-    return (
-        db.query(AnalysisMessage)
-        .filter(AnalysisMessage.analysis_id == analysis_id)
-        .order_by(AnalysisMessage.created_at.asc(), AnalysisMessage.id.asc())
-        .all()
-    )
+    _own_or_404(db, analysis_id, user)
+    return analysis_service.list_messages(db, analysis_id)
